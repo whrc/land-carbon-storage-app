@@ -7,30 +7,30 @@ library(shiny)
 ee_Initialize()
 
 # 2. Copy credentials file to the project folder
-file_credentials <- sprintf("%s/credentials", dirname(rgee::ee_get_earthengine_path()))
+file_credentials <- sprintf('%s/credentials', dirname(rgee::ee_get_earthengine_path()))
 file.copy(file_credentials, to = ".")
 
 # 3. Set ShinyApps account info
 # FIRST MODIFY LOCAL .Renviron!!
-error_on_missing_name <- function(name){
-  var <- Sys.getenv(name, unset=NA)
-  if(is.na(var)){
-    stop(paste0("cannot find ",name),call. = FALSE)
+error_on_missing_name <- function(name) {
+  var <- Sys.getenv(name, unset = NA)
+  if(is.na(var)) {
+    stop(paste0('cannot find ', name), call. = F)
   }
   gsub("\"", '',var)
 }
 
-setAccountInfo(name   = error_on_missing_name("SHINY_ACC_NAME"),
-               token  = error_on_missing_name("TOKEN"),
-               secret = error_on_missing_name("SECRET"))
+setAccountInfo(name   = error_on_missing_name('SHINY_ACC_NAME'),
+               token  = error_on_missing_name('TOKEN'),
+               secret = error_on_missing_name('SECRET'))
 
 
 # 4. Run the application
 deployApp(
-  appFiles = c("app.R", "utils.R", "credentials"),
-  appTitle = "pot-c-app",
-  lint = FALSE
+  appFiles = c('app.R', 'utils.R', 'credentials'),
+  appTitle = 'pot-c-app',
+  lint = F
 )
 
 # 5. Delete EE credentials file
-file.remove("credentials")
+file.remove('credentials')

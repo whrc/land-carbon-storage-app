@@ -42,3 +42,5 @@ vignettes/*.pdf
 credentials
 
 rsconnect/
+
+.DS_Store
