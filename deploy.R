@@ -27,7 +27,7 @@ setAccountInfo(name   = error_on_missing_name('SHINY_ACC_NAME'),
 
 # 4. Run the application
 deployApp(
-  appFiles = c('app.R', 'utils.R', 'credentials','www'),
+  appFiles = c('app.R', 'utils.R', 'credentials', 'www', 'shp'),
   appTitle = 'pot-c-app',
   lint = F
 )
