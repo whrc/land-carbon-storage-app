@@ -19,7 +19,7 @@ library(geojsonio)
 library(shiny)
 library(shinyWidgets)
 library(shinyBS)
-library(shinyanimate)
+# library(shinyanimate)
 # library(shinyglide) # for app walk through guide
 library(sf)
 library(dplyr)
@@ -29,8 +29,10 @@ library(leafem)
 library(leafpm)
 library(htmlwidgets)
 library(htmltools)
+library(jsonlite)
 library(viridis)
 library(phosphoricons)
+library(curl)
 source('utils.R')
 
 # -------------------------------------------------------------------------------
@@ -55,12 +57,14 @@ tryCatch(
 )
 
 # -------------------------------------------------------------------------------
-# 5. Get Mapbox Access Token
+# 5. Get API Keys and Access Tokens
 # -------------------------------------------------------------------------------
 
 # get token from .Renviron
 readRenviron('.Renviron')
 mb.token <- Sys.getenv('MAPBOX_ACCESS_TOKEN')
+esri.key <- Sys.getenv('ESRI_API_KEY')
+# gm.key <- Sys.getenv('GOOGLE_MAPS_API_KEY')
 
 # -------------------------------------------------------------------------------
 # 6. Install Woodwell Fonts on ShinyApps.io Ubuntu server
@@ -84,9 +88,11 @@ if (!dev) {
 
 ui <- bootstrapPage(
 
-	withAnim(),
+	# withAnim(),
 
 	tags$head(
+		# tags$link(rel = 'icon', type = 'image/png', href = 'www/woodwell-logo-color.png'),
+		tags$link(rel = 'icon', type = 'image/png', href = 'https://assets-woodwell.s3.us-east-2.amazonaws.com/wp-content/uploads/2020/08/19125343/Woodwell_Favicon.png'),
 		includeCSS('woodwell-fonts.css'),
 		tags$style(
 			type = 'text/css',
@@ -99,11 +105,51 @@ ui <- bootstrapPage(
 				cursor: crosshair!important;
 				background: #1a1a1a;
 			}
+			.legend {
+				background-color: #EFEEEE;
+				font-family: Ginto Normal;
+			}
+			.leaflet-control-scale-line {
+				font-family: Ginto Normal;
+				color: #EFEEEE;
+				border: 1px solid #EFEEEE;
+				border-top: none;
+				margin-top: 10px;
+				margin-bottom: 6px;
+				line-height: 1.1;
+				padding: 2px 5px 1px;
+				font-size: 11px;
+				white-space: nowrap;
+				overflow: hidden;
+				-moz-box-sizing: border-box;
+					box-sizing: border-box;
+				background: #EFEEEE;
+				background: rgba(255, 255, 255, 0);
+			}
+			.leaflet-control-scale-line:not(:first-child) {
+				border: 1px solid #EFEEEE;
+				border-top: none;
+				margin-top: 6px;
+			}
+			.leaflet-control-scale-line:not(:first-child):not(:last-child) {
+				border: 1px solid #EFEEEE;
+				border-top: none;
+			}
 			img.woodwell {
-				opacity: 0.3;
+				opacity: 0.35;
 			}
 			img.woodwell:hover {
 				opacity: 0.7;
+			}
+			img.woodwellBig {
+				display: block;
+				margin-left: auto;
+				margin-right: auto;
+				margin-top: 20px;
+				margin-bottom: 0px;
+			}
+			img.woodwellBig:hover {
+				box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
 			}
 			.btn.sidebar {
 				display: block;
@@ -472,11 +518,24 @@ ui <- bootstrapPage(
 
 				div(id = 'optionsPanel', class = 'panelHeader',	'INFO'),
 
-				div(id = 'optionsPanel', class = 'panelBody',
-					p('This map contains data central to the analysis reported by',
-					  a('Walker et al. (2022)', href = 'https://doi.org/10.1073/pnas.2111312119', target = '_blank'),
-					  'on the global potential for increased storage of carbon on land.',
-					  'Units for carbon density maps are megagrams of carbon per hectare (MgC/ha).')
+				div(id = 'optionsPanel', class = 'panelBody', style = 'text-align: justify;',
+					p('About the Site', class = 'inputHeading'),
+					p('The Land Carbon Storage Platform is a data sharing, visualization, and analysis web-app built by:'),
+					a(img(src = 'woodwell-logo-color-text.png', class = 'woodwellBig', width = '85%', height = 'auto'), href = 'https://www.woodwellclimate.org/', target = '_blank'),
+					br(),
+					p('About the Data', class = 'inputHeading'),
+					p('This site contains a first-of-its-kind data set on the global potential for increased storage of carbon on land.',
+					  'This comprehensive data set was produced by Walker et al. (2022) and is described in detail in the',
+					  a('Proceedings of the National Academy of Sciences.', href = 'https://doi.org/10.1073/pnas.2111312119', target = '_blank')
+					),
+					p('The units of the carbon density maps shown here are megagrams of carbon per hectare (Mg C ha', tags$sup(-1), ').',
+					  'The data set has been prepared at a spatial resolution of ca. 500 meters in the MODIS sinusoidal projection'),
+					p('Data can be downloaded in GeoTIFF format from the',
+					  a('Harvard Dataverse.', href = 'https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DSDDQK', target = '_blank')
+					),
+					p('Contact Us', class = 'inputHeading'),
+					a('info@woodwellclimate.org', href = 'mailto:info@woodwellclimate.org?subject=Land Carbon Storage Platform Inquiry', target='_blank'),
+					a('508-540-9900', href = 'tel:+15085409900')
 				)
 			)
 		)
@@ -802,17 +861,25 @@ server <- function(input, output, session) {
 				'UNR' = c('black', magma(255))
 			)
 
+			vis.params <- list(
+				min = 0,
+				max = max.val,
+				palette = col.pal
+			)
+
 			m1 <- Map$addLayer(
 				eeObject = img.mgcha,
-				visParams = list(
-					min = 0,
-					max = max.val,
-					palette = col.pal
-				)
+				visParams = vis.params
+			)
+
+			leg.pal <- colorNumeric(
+				palette = rev(col.pal),
+				domain = rev(c(0, max.val))
 			)
 
 			leafletProxy('map', session) %>%
 				clearGroup(group = 'raster') %>%
+				removeControl(layerId = 'legend') %>%
 				addTiles(
 					urlTemplate = m1$rgee$tokens,
 					layerId = 'carbonLayer',
@@ -823,12 +890,23 @@ server <- function(input, output, session) {
 						bounds = list(list(-90, -180), list(90, 180)),
 						pane = 'raster'
 					)
+				) %>%
+				addLegend(
+					layerId = 'legend',
+					position = 'bottomright',
+					pal = leg.pal,
+					values = c(0, max.val),
+					bins = 4,
+					title = 'Mg C ha<sup>-1</sup>',
+					opacity = 1,
+					labFormat = labelFormat(transform = function(x) sort(x, decreasing = T))
 				)
 
 		} else {
 
 			leafletProxy('map', session) %>%
-				clearGroup(group = 'raster')
+				clearGroup(group = 'raster') %>%
+				removeControl(layerId = 'legend')
 
 		}
 	})
@@ -917,6 +995,8 @@ server <- function(input, output, session) {
 
 	})
 
+	rv$esri.attr <- NULL
+
 	observeEvent(input$switchImagery, {
 
 		# dark
@@ -936,16 +1016,34 @@ server <- function(input, output, session) {
 
 		# imagery
 		if (input$switchImagery) {
+
+			if (is.null(rv$esri.attr)) {
+				curl.req <- curl_fetch_memory(paste0('https://basemaps-api.arcgis.com/arcgis/rest/services/styles/ArcGIS:Imagery?type=style&token=', esri.key))
+				esri.meta <- parse_json(rawToChar(curl.req$content))
+				rv$esri.attr <- esri.meta$sources$esri$attribution
+				if (verbose) message(rv$esri.attr)
+			}
+
 			leafletProxy('map', session) %>%
 				clearGroup(group = 'basemap') %>%
+				# addTiles(
+				# 	urlTemplate = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}',
+				# 	attribution = paste(c(
+				# 		"<a href='https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer' target='_blank'>U.S. Geological Survey</a>",
+				# 		"<a href='https://earthengine.google.com' target='_blank'>Google Earth Engine</a>",
+				# 		"<a href='https://shiny.rstudio.com' target='_blank'>R Shiny</a>"), collapse = ' | '),
+				# 	group = 'basemap',
+				# 	options = tileOptions(noWrap = T, bounds = list(list(-90, -180), list(90, 180))))
 				addTiles(
-					urlTemplate = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}',
+					urlTemplate = paste0('https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}?token=', esri.key),
 					attribution = paste(c(
-						"<a href='https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer' target='_blank'>U.S. Geological Survey</a>",
+						"Imagery Powered by <a href='https://www.esri.com/en-us/home' target='_blank'>Esri</a>",
+						paste('Imagery', rv$esri.attr),
 						"<a href='https://earthengine.google.com' target='_blank'>Google Earth Engine</a>",
 						"<a href='https://shiny.rstudio.com' target='_blank'>R Shiny</a>"), collapse = ' | '),
 					group = 'basemap',
 					options = tileOptions(noWrap = T, bounds = list(list(-90, -180), list(90, 180))))
+
 		}
 
 	})
@@ -965,9 +1063,10 @@ server <- function(input, output, session) {
 				clearGroup(group = 'placeLabels') %>%
 				addTiles(
 					urlTemplate = paste0('https://api.mapbox.com/styles/v1/sgorelik/clb1na6a0003915o0doxdw88p/tiles/256/{z}/{x}/{y}@2x?access_token=', mb.token),
-					attribution = paste(c(
-						"<a href='https://www.mapbox.com/about/maps/' target='_blank'>Mapbox</a>",
-						"<a href='https://www.openstreetmap.org/copyright' target='_blank'>OpenStreetMap</a>"), collapse = ' | '),
+					attribution = paste(
+						"Places:",
+						"<a href='https://www.mapbox.com/about/maps/' target='_blank'>Mapbox</a> &",
+						"<a href='https://www.openstreetmap.org/copyright' target='_blank'>OpenStreetMap</a>"),
 					group = 'placeLabels',
 					options = tileOptions(pane = 'placeLabels', noWrap = T, bounds = list(list(-90, -180), list(90, 180))))
 		}
