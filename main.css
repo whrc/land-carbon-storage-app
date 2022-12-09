@@ -25,6 +25,25 @@ html, body {
 	background-color: #EFEEEE;
 	font-family: Ginto Normal;
 }
+
+/* removes labels on text slider input */
+.irs-single {
+	display: none;
+}
+/* makes slider handle smaller than default and make colors match other switches */
+.irs-handle.single{
+	top: 21px;
+	width: 16px;
+	height: 16px;
+	border-radius: 16px;
+    border: 1px solid #bdc3c7;
+    background-color: #bdc3c7;
+}
+.irs-line {
+	background: white !important;
+	border: 1px solid #bdc3c7 !important;
+}
+
 img.woodwell {
 	opacity: 1;
 }
@@ -163,16 +182,15 @@ img.woodwellBig:hover {
 	display: grid;
 	grid-template-columns: 9fr 1fr;
 }
-#pixelInspector {
-	overflow: hidden;
-}
 .contactGrid {
 	align-items: center;
 	width: 100%;
 	display: grid;
 	grid-template-columns: 1fr 9fr;
 }
-
+#pixelInspector {
+	overflow: hidden;
+}
 
 /* Mapbox adjusements to match app style better
 a.mapboxgl-ctrl-logo {
@@ -202,10 +220,25 @@ a.mapboxgl-ctrl-logo:hover {
 	border-left: transparent;
 	text-align: center;
 }
+
+
+.mapboxgl-ctrl-bottom-right-adj {
+  bottom: 0;
+  right: 100px;
+  position: absolute;
+}
+
 .mapboxgl-ctrl-bottom-left {
 	bottom: 0;
 	left: 92px;
 }
+
+/* legend control */
+.mapboxer-text-ctrl {
+	background-color: rgb(255 255 255 / 90%);
+}
+
+
 .mapboxgl-ctrl.mapboxgl-ctrl-attrib {
 	padding: 0 5px;
 	background-color: rgb(0 0 0 / 75%);
@@ -232,6 +265,10 @@ a.mapboxgl-ctrl-logo:hover {
     width: 50px;
     height: 50px;
     margin-right: 40px;
+}
+
+.mapboxgl-popup-close-button {
+	display: none;
 }
 
 

@@ -27,6 +27,7 @@ library(rgee)
 library(viridisLite)
 library(viridis)
 library(sf)
+library(dplyr)
 library(geojson) # not sure if this is needed anymore...
 library(geojsonio) # needed for ee_extract()
 library(geojsonsf) # needed to convert mapbox javascript return to sf object
@@ -94,8 +95,16 @@ START.CONSTRAIN <- F
 pal.cols <- if (START.PERIOD == 'UNR') { magma(256) } else { viridis(256) }
 pal.style <- paste0('linear-gradient(0deg, #000000, ', paste0(pal.cols, collapse = ', '), ')')
 
-sp.countries <- read_sf('shp/ne_10m_admin_0_countries_WGS84_small.shp')
 sp.lines <- read_sf('shp/ne_10m_geographic_lines_WGS84_waterOnly.shp')
+sp.countries <- read_sf('shp/ne_10m_admin_0_countries_WGS84_small.shp')
+sp.bioclim <- read_sf('shp/gez_2010_wgs84_dissolved_small.shp') %>%
+	mutate(fill_color = case_when(
+		group == 'Polar' ~ '#ffffcc',
+		group == 'Boreal' ~ '#a1dab4',
+		group == 'Temperate' ~ '#41b6c4',
+		group == 'Subtropical' ~ '#2c7fb8',
+		group == 'Tropical' ~ '#253494'
+	))
 
 logo.href.path <- ifelse(dev, '/', '/pot-c-app')
 
@@ -132,7 +141,6 @@ ui <- bootstrapPage(
 					background: ', pal.style, '
 				}')
 		),
-		tags$head(uiOutput('cursor_css')),
 		tags$script("
 			Shiny.addCustomMessageHandler('projection', function(proj) {
 				const map = mapboxer._widget['map'].map;
@@ -171,6 +179,7 @@ ui <- bootstrapPage(
 		tags$link(rel = 'stylesheet', href = 'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.css', type = 'text/css')
 
 	),
+	tags$head(uiOutput('cursor_css')),
 
 	absolutePanel(
 		id = 'sidebarPanel',
@@ -312,25 +321,35 @@ ui <- bootstrapPage(
 						outline = F
 					),
 
-					p('Constraints', class = 'inputHeading'),
+					p('Options', class = 'inputHeading'),
+					div(style = 'display: flex; align-items: end; margin-bottom: 4px;',
+						setSliderColor(color = '#69bd54', sliderId = 1),
+						tagAppendAttributes(
+							sliderTextInput(
+								inputId = 'transparency',
+								label = NULL,
+								choices = 0:100,
+								selected = 0,
+								hide_min_max = T,
+								width = '60px',
+								post = '%',
+								force_edges = T
+							),
+							style = 'margin-top: -18px; margin-bottom: 4px;'
+						),
+						p('Transparency', style = 'margin-bottom: 5px; margin-left: 8px;')
+					),
 					div(class = 'infoTipGrid',
-						# prettyCheckboxGroup(
-						# 	inputId = 'climate',
-						# 	label = NULL,
-						# 	choices = c('Cropland', 'Urban Areas'),
-						# 	selected = NULL,
-						# 	shape = 'curve',
-						# 	icon = icon('check'),
-						# 	status = 'success',
-						# 	outline = F
-						# ),
-						prettySwitch(
-							inputId = 'constrain',
-							label = 'Constrain',
-							value = F,
-							status = 'success',
-							fill = F,
-							width = '100%'
+						tagAppendAttributes(
+							prettySwitch(
+								inputId = 'constrain',
+								label = 'Constrain',
+								value = F,
+								status = 'success',
+								fill = F,
+								width = '100%'
+							),
+							style = 'margin-right: 0px;'
 						),
 						ph_i('info', weight = 'fill', size = '1x', color = '#828282', id = 'infoConstraints')
 					),
@@ -384,21 +403,6 @@ ui <- bootstrapPage(
 							),
 							style = 'margin-right: 0px;'
 						)
-					),
-
-					p('Transparency', class = 'inputHeading', style = 'margin-bottom: 0px;'),
-					setSliderColor('#69bd54', 1),
-					tagAppendAttributes(
-						sliderTextInput(
-							inputId = 'transparency',
-							label = NULL,
-							choices = 0:100,
-							selected = 0,
-							hide_min_max = T,
-							width = '95%',
-							post = '%'
-						),
-						style = 'padding-top: 0px; display: inline-block;'
 					)
 				)
 			)
@@ -435,8 +439,8 @@ ui <- bootstrapPage(
 							tableOutput(outputId = 'pixelInspector')
 						),
 						bsCollapsePanel(
-							title = 'Draw on Map',
-							p('Draw a polygon on the map. When it\'s ready, click the button below to analyze the carbon within that polygon.', style = 'font-style: italic; padding-bottom: 6px;'),
+							title = 'Draw Shape',
+							p('Click the polygon icon below to enable the drawing tool. Then click on the map to select your first vertex. Click to create additional vertices. Double-click to add your last vertex, and the polygon will be created. After the polygon is created, click the calculator icon below to analyze the carbon within that polygon. To delete the polygon, select it and then click the trash icon.', style = 'font-style: italic; padding-bottom: 6px;'),
 							div(style = 'display: flex;',
 								div(id = 'draw', class = 'drawControls'),
 								actionButton(
@@ -450,7 +454,7 @@ ui <- bootstrapPage(
 						),
 						bsCollapsePanel(
 							title = 'Upload Shapefile',
-							p('The input must be a polygon shapefile comprised of four separate .shp, .shx, .dbf, and .prj files.', style = 'font-style: italic; padding-bottom: 6px;'),
+							p('Upload a polygon shapefile to analyze the carbon within it\'s boundaries. Results will show below. You must provide a polygon shapefile comprised of four separate .shp, .shx, .dbf, and .prj files.', style = 'font-style: italic; padding-bottom: 6px;'),
 							fileInput(
 								inputId = 'shapefile',
 								label = NULL,
@@ -530,7 +534,7 @@ ui <- bootstrapPage(
 						</p>
 						<p>
 							The units of the carbon density maps shown here are megagrams of carbon per hectare (Mg C ha<sup>-1</sup>).
-							The data set has been prepared at a spatial resolution of ca. 500 meters in the MODIS sinusoidal projection.
+							The data set has been prepared at a spatial resolution of ca. 500 meters in the MODIS sinusoidal map projection.
 						</p>
 						<p>
 							Data can be downloaded in GeoTIFF format from the
@@ -726,8 +730,8 @@ server <- function(input, output, session) {
 				 renderWorldCopies = F,
 				 logoPosition = 'bottom-left',
 				 customAttribution = "<a href='https://earthengine.google.com' target='_blank'>Google Earth Engine</a> | <a href='https://shiny.rstudio.com' target='_blank'>Shiny</a>",
-				 zoom = 1.6,
-				 center = c(-10, 16)) %>%
+				 zoom = 2.0,
+				 center = c(-10, 10)) %>%
 			# add equator and tropics lines
 			add_source(as_mapbox_source(sp.lines), id = 'lat_lines') %>%
 			add_line_layer(
@@ -780,8 +784,19 @@ server <- function(input, output, session) {
 				popup = '{{NAME}}',
 				visibility = F
 			) %>%
+			# add bioclimate zones
+			add_source(as_mapbox_source(sp.bioclim), id = 'bioclim') %>%
+			add_fill_layer(
+				source = 'bioclim',
+				id = 'bioclim',
+				fill_color = c('get', 'fill_color'),
+				fill_opacity = 0.8,
+				fill_outline_color = 'white',
+				popup = '{{group}}',
+				visibility = F
+			) %>%
 			#add controls
-			add_scale_control(unit = 'metric', pos = 'bottom-right') %>%
+			# add_scale_control(unit = 'metric', pos = 'bottom-right') %>%
 			# add_scale_control(unit = 'imperial', pos = 'bottom-right') %>%
 			# add_mouse_position_control(mustache_template = '<b>Lat:</b> {{lat}}, <b>Lng:</b> {{lng}}', css_text = 'width: 100px;', pos = 'bottom-right') %>%
 			add_text_control(
@@ -790,7 +805,7 @@ server <- function(input, output, session) {
 					<strong>Mg C ha<sup>-1</sup></strong>
 					<div class='legend-grid'>
 						<div id='item-0'><div id='colorRamp'></div></div>
-						<div id='item-1'>100</div>
+						<div id='item-1'>≥100</div>
 						<div id='item-2'>75</div>
 						<div id='item-3'>50</div>
 						<div id='item-4'>25</div>
@@ -804,8 +819,12 @@ server <- function(input, output, session) {
 					const map = mapboxer._widget[el.id].map;
 
 					// add controls
-					// const full = new mapboxgl.FullscreenControl();
-					// document.getElementById('fullControl').appendChild(full.onAdd(map));
+					const scale = new mapboxgl.ScaleControl({
+						maxWidth: 100,
+						unit: 'metric'
+					});
+					map.addControl(scale, 'bottom-left');
+					// scale._container.parentNode.className = 'mapboxgl-ctrl-bottom-right-adj';
 
 					const nav = new mapboxgl.NavigationControl({
 						showZoom: true,
@@ -1001,14 +1020,14 @@ server <- function(input, output, session) {
 
 		if (input$period == 'UNR') {
 			new.pal.cols <- magma(256)
-			item.1 <- 100
+			item.1 <- '≥100'
 			item.2 <- 75
 			item.3 <- 50
 			item.4 <- 25
 			item.5 <- 0
 		} else {
 			new.pal.cols <- viridis(256)
-			item.1 <- 400
+			item.1 <- '≥400'
 			item.2 <- 300
 			item.3 <- 200
 			item.4 <- 100
@@ -1037,6 +1056,22 @@ server <- function(input, output, session) {
 		mapboxer_proxy('map') %>%
 			set_paint_property(layer_id = rv$cur_carb_lyr, property = 'raster-opacity', value = opacity) %>%
 			update_mapboxer()
+	})
+
+	# ---------------------------------------
+	# toggle bioclimate zones
+	# ---------------------------------------
+
+	observeEvent(input$bioclimzones, {
+
+		mapboxer_proxy('map') %>%
+			set_layout_property(layer_id = 'bioclim', property = 'visibility', value = input$bioclimzones) %>%
+			update_mapboxer()
+
+		if (input$bioclimzones) {
+			session$sendCustomMessage('moveLayerBeforeLayer', message = list(layerID = 'bioclim', beforeID = 'gl-draw-polygon-fill-inactive.cold'))
+		}
+
 	})
 
 	# ---------------------------------------
@@ -1085,7 +1120,9 @@ server <- function(input, output, session) {
 
 	# change cursor to crosshair when user is in pixel inspector panel
 	set_cursor <- reactive({
-		if ((rv$show == 'anl') & (input$analysisCollapsePanel == 'Inspect Pixel')) {
+		# message(rv$show)
+		# message(input$analysisCollapsePanel)
+		if ((rv$show == 'anl') & (req(input$analysisCollapsePanel) == 'Inspect Pixel')) {
 			cursor <- 'crosshair'
 		} else {
 			cursor <- 'auto'

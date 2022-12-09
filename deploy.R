@@ -1,5 +1,7 @@
 #!/usr/bin/env Rscript
 
+### To deploy, make sure `dev = F` in `app.R` ###
+
 library(reticulate)
 library(rsconnect)
 library(rgee)
