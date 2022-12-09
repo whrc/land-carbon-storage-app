@@ -22,9 +22,9 @@ set_rgee_dependencies <- function() {
 	)
 
 	# 4. Copy credentials file to the project folder
-	oauth_func_path <- system.file("python/ee_utils.py", package = 'rgee')
+	oauth_func_path <- system.file('python/ee_utils.py', package = 'rgee')
 	utils_py <- rgee:::ee_source_python(oauth_func_path)
-	ee_path <- sprintf("%s/ndef", ee_utils_py_to_r(utils_py$ee_path()))
+	ee_path <- sprintf('%s/ndef', ee_utils_py_to_r(utils_py$ee_path()))
 	dir.create(ee_path, showWarnings = F, recursive = T)
 	file.copy(from = 'credentials', to = ee_path, overwrite = T)
 

@@ -1,10 +1,8 @@
-#!/usr/bin/env Rscript
-
 # -------------------------------------------------------------------------------
-# 1. OPTIONS
+# 1. Development/Deployment Options
 # -------------------------------------------------------------------------------
 
-# development (TRUE) or deployment (FALSE)?
+# development (T) or deployment (F)?
 dev <- F
 
 # print messages to console?
@@ -14,26 +12,29 @@ verbose <- F
 # 2. Libraries
 # -------------------------------------------------------------------------------
 
-library(rgee)
-library(geojsonio)
+# UI
 library(shiny)
+library(shinyjs)
 library(shinyWidgets)
+library(shinybusy)
 library(shinyBS)
-# library(shinyanimate)
-# library(shinyglide) # for app walk through guide
-library(sf)
-library(dplyr)
-library(leaflet)
-library(leaflet.extras) # devtools::install_github('srgorelik/leaflet.extras')
-library(leafem)
-library(leafpm)
-library(htmlwidgets)
-library(htmltools)
-library(jsonlite)
-library(viridis)
 library(phosphoricons)
-library(curl)
+library(htmlwidgets)
 source('utils.R')
+
+# mapping/analysis
+library(rgee)
+library(viridisLite)
+library(viridis)
+library(sf)
+library(geojson) # not sure if this is needed anymore...
+library(geojsonio) # needed for ee_extract()
+library(geojsonsf) # needed to convert mapbox javascript return to sf object
+
+### see https://github.com/crazycapivara/mapboxer/pull/104 ###
+# devtools::install_github(repo = 'walkerke/mapboxer', ref = 'gljs-v2')
+library(mapboxer)
+mapboxer_use_v2(T)
 
 # -------------------------------------------------------------------------------
 # 3. Set rgee
@@ -63,8 +64,6 @@ tryCatch(
 # get token from .Renviron
 readRenviron('.Renviron')
 mb.token <- Sys.getenv('MAPBOX_ACCESS_TOKEN')
-esri.key <- Sys.getenv('ESRI_API_KEY')
-# gm.key <- Sys.getenv('GOOGLE_MAPS_API_KEY')
 
 # -------------------------------------------------------------------------------
 # 6. Install Woodwell Fonts on ShinyApps.io Ubuntu server
@@ -79,155 +78,102 @@ if (!dev) {
 }
 
 # -------------------------------------------------------------------------------
-# 7. Define App
+# 7. App Startup Parameters
 # -------------------------------------------------------------------------------
 
-# .tooltip-inner {
-# 	text-align: left!important;
-# }
+START.VIEW <- 'GLOBE'
+START.POOL <- c('AGB', 'BGB')
+START.PERIOD <- 'UNR'
+START.CLIMATE <- 'Base_Clim'
+START.CONSTRAIN <- F
+
+# -------------------------------------------------------------------------------
+# 8. Define App
+# -------------------------------------------------------------------------------
+
+pal.cols <- if (START.PERIOD == 'UNR') { magma(256) } else { viridis(256) }
+pal.style <- paste0('linear-gradient(0deg, #000000, ', paste0(pal.cols, collapse = ', '), ')')
+
+sp.countries <- read_sf('shp/ne_10m_admin_0_countries_WGS84_small.shp')
+sp.lines <- read_sf('shp/ne_10m_geographic_lines_WGS84_waterOnly.shp')
+
+logo.href.path <- ifelse(dev, '/', '/pot-c-app')
+
+globe.icon <- ph_i('globe', weight = 'bold', style = 'vertical-align: -0.26em;')
+flat.icon <- ph_i('map-trifold', weight = 'bold', style = 'vertical-align: -0.26em;')
+if (START.VIEW == 'globe') start.icon <- flat.icon else start.icon <- globe.icon
 
 ui <- bootstrapPage(
 
-	# withAnim(),
+	useShinyjs(),
+
+	busy_start_up(
+		loader = spin_kit(spin = 'cube-grid', color = '#FF5700', style = 'width: 50px; height: 50px; position: relative;'),
+		text = 'Loading Platform...',
+		mode = 'auto',
+		color = '#EFEEEE',
+		background = 'black'
+	),
+
+	add_busy_bar(
+		color = '#FF5700', centered = T
+	),
 
 	tags$head(
-		# tags$link(rel = 'icon', type = 'image/png', href = 'www/woodwell-logo-color.png'),
 		tags$link(rel = 'icon', type = 'image/png', href = 'https://assets-woodwell.s3.us-east-2.amazonaws.com/wp-content/uploads/2020/08/19125343/Woodwell_Favicon.png'),
+		includeCSS('main.css'),
 		includeCSS('woodwell-fonts.css'),
 		tags$style(
 			type = 'text/css',
-			'html, body {
-				font-family: Ginto Normal;
-				width: 100%;
-				height: 100%;
-			}
-			.leaflet-container {
-				cursor: crosshair!important;
-				background: #1a1a1a;
-			}
-			.legend {
-				background-color: #EFEEEE;
-				font-family: Ginto Normal;
-			}
-			.leaflet-control-scale-line {
-				font-family: Ginto Normal;
-				color: #EFEEEE;
-				border: 1px solid #EFEEEE;
-				border-top: none;
-				margin-top: 10px;
-				margin-bottom: 6px;
-				line-height: 1.1;
-				padding: 2px 5px 1px;
-				font-size: 11px;
-				white-space: nowrap;
-				overflow: hidden;
-				-moz-box-sizing: border-box;
-					box-sizing: border-box;
-				background: #EFEEEE;
-				background: rgba(255, 255, 255, 0);
-			}
-			.leaflet-control-scale-line:not(:first-child) {
-				border: 1px solid #EFEEEE;
-				border-top: none;
-				margin-top: 6px;
-			}
-			.leaflet-control-scale-line:not(:first-child):not(:last-child) {
-				border: 1px solid #EFEEEE;
-				border-top: none;
-			}
-			img.woodwell {
-				opacity: 0.35;
-			}
-			img.woodwell:hover {
-				opacity: 0.7;
-			}
-			img.woodwellBig {
-				display: block;
-				margin-left: auto;
-				margin-right: auto;
-				margin-top: 20px;
-				margin-bottom: 0px;
-			}
-			img.woodwellBig:hover {
-				box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
-			}
-			.btn.sidebar {
-				display: block;
-				height: 70px;
-				width: 100%;
-				border-radius: 0%;
-				border: 0px;
-				background-color: #EFEEEE;
-			}
-			.btn.sidebar:focus {
-				outline: none;
-			}
-			.btn.closePanel {
-				height: 16px;
-				border-radius: 0%;
-				border: 0px;
-				background-color: transparent;
-				padding-top: 0px;
-				padding-right: 10px;
-			}
-			.btn.closePanel:focus {
-				outline: none;
-				background-color: transparent;
-				box-shadow: none;
-			}
-			#appLogo {
-				background-color: #36363C;
-				height: 80px;
-				padding: 8px;
-			}
-			#optionsPanel {
-				height: 100%;
-				width: 220px;
-			}
-			#optionsPanel.panelClose {
-				background-color: #EFEEEE;
-				height: 10px;
-				width: 220px;
-				text-align: right;
-				padding: 0px;
-			}
-			#optionsPanel.panelHeader {
-				display: table-cell;
-				color: black;
-				background-color: #EFEEEE;
-				font-size: 18px;
-				font-weight: 700;
-				height: 70px;
-				text-align: left;
-				vertical-align: bottom;
-				padding: 20px;
-			}
-			#optionsPanel.panelBody {
-				background-color: white;
-				padding: 20px 20px 100px 20px;
-				overflow-y: auto;
-			}
-			.inputHeading {
-				font-weight: 700;
-				padding-top: 10px;
-			}
-			.infoTipGrid {
-				align-items: top;
-				width: 100%;
-				display: grid;
-				grid-template-columns: 9fr 1fr;
-			}
-			#pixelInspector {
-				overflow: hidden;
-			}
-			'
-		)
+			paste0(
+				'#colorRamp {
+					width: 100%;
+					height: 100%;
+					background: ', pal.style, '
+				}')
+		),
+		tags$head(uiOutput('cursor_css')),
+		tags$script("
+			Shiny.addCustomMessageHandler('projection', function(proj) {
+				const map = mapboxer._widget['map'].map;
+				map.setProjection(proj);
+			});
+		"),
+		tags$script("
+			Shiny.addCustomMessageHandler('legend', function(message) {
+				document.getElementById('colorRamp').style.background = message.style;
+				document.getElementById('item-1').innerHTML = message.item1;
+				document.getElementById('item-2').innerHTML = message.item2;
+				document.getElementById('item-3').innerHTML = message.item3;
+				document.getElementById('item-4').innerHTML = message.item4;
+				document.getElementById('item-5').innerHTML = message.item5;
+			});
+		"),
+		tags$script("
+			Shiny.addCustomMessageHandler('moveLayerBeforeLayer', function(message) {
+				const map = mapboxer._widget['map'].map;
+				map.moveLayer(message.layerID, message.beforeID);
+			});
+		"),
+		tags$script("
+			Shiny.addCustomMessageHandler('moveLayerToTop', function(layerID) {
+				const map = mapboxer._widget['map'].map;
+				map.moveLayer(layerID);
+			});
+		"),
 
-		# use if app is loaded into iFrame on another website:
-		# tags$script(type = 'text/javascript', src = 'https://cdnjs.cloudflare.com/ajax/libs/iframe-resizer/3.5.16/iframeResizer.contentWindow.min.js')
+		# for mapbox draw control
+		tags$script(src = 'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.3.0/mapbox-gl-draw.js'),
+		tags$link(rel = 'stylesheet', href = 'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.3.0/mapbox-gl-draw.css'),
+
+		# for mapbox geocoding api
+		tags$script(src = 'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.min.js'),
+		tags$link(rel = 'stylesheet', href = 'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-geocoder/v5.0.0/mapbox-gl-geocoder.css', type = 'text/css')
+
 	),
 
 	absolutePanel(
+		id = 'sidebarPanel',
 		top = 0,
 		bottom = 0,
 		left = 0,
@@ -236,9 +182,8 @@ ui <- bootstrapPage(
 		height = '100%',
 		fixed = T,
 		draggable = F,
-		style = 'background-color: #EFEEEE; z-index: 10;',
 
-		div(id = 'appLogo', img(src = 'app-logo.svg', width = '100%', height = '100%')),
+		div(id = 'appLogo', a(img(src = 'app-logo.svg', width = '100%', height = '100%'), href = logo.href.path)), # using an image allows it to refresh app on click
 
 		div(style = 'height: 15px; width: 100%;'),
 
@@ -251,19 +196,17 @@ ui <- bootstrapPage(
 		),
 
 		actionButton(
-			inputId = 'loc_btn',
+			inputId = 'anl_btn',
 			label = NULL,
-			# icon = ph_i('map-pin-line', weight = 'thin', size = '2x'),
-			# icon = ph_i('grid-four', weight = 'thin', size = '2x'),
-			icon = ph_i('crosshair', weight = 'thin', size = '2x'),
+			icon = ph_i('chart-bar-horizontal', weight = 'thin', size = '2x'),
 			width = '100%',
 			class = 'sidebar'
 		),
 
 		actionButton(
-			inputId = 'ply_btn',
+			inputId = 'loc_btn',
 			label = NULL,
-			icon = ph_i('polygon', weight = 'thin', size = '2x'),
+			icon = ph_i('map-pin', weight = 'thin', size = '2x'),
 			width = '100%',
 			class = 'sidebar'
 		),
@@ -288,7 +231,20 @@ ui <- bootstrapPage(
 		fixed = T,
 		draggable = F,
 
-		leafletOutput(outputId = 'map', width = '100%', height = '100vh'),
+		mapboxerOutput(outputId = 'map', width = '100%', height = '100%'),
+
+		absolutePanel(
+			top = 10,
+			right = 10,
+			style = 'float: right; padding: 4px; border-radius: 4px; background-color: #fff;',
+			actionButton(
+				inputId = 'view',
+				label = NULL,
+				icon = start.icon,
+				class = 'customControl'
+			),
+			div(id = 'navControl', style = 'padding: 0; outline: none; border: 0; box-shadow: none;')
+		),
 
 		absolutePanel(
 			bottom = 10,
@@ -324,10 +280,10 @@ ui <- bootstrapPage(
 
 					p('Period', class = 'inputHeading'),
 					prettyRadioButtons(
-						inputId = 'radioTime',
+						inputId = 'period',
 						label = NULL,
 						choices = c('Current' = 'CUR', 'Potential' = 'POT', 'Unrealized Potential' = 'UNR'),
-						selected = 'UNR',
+						selected = START.PERIOD,
 						shape = 'round',
 						status = 'success',
 						outline = F
@@ -335,10 +291,10 @@ ui <- bootstrapPage(
 
 					p('Pool', class = 'inputHeading'),
 					prettyCheckboxGroup(
-						inputId = 'checkPool',
+						inputId = 'pool',
 						label = NULL,
 						choices = c('Aboveground' = 'AGB', 'Belowground' = 'BGB', 'Soil' = 'SOC'),
-						selected = c('AGB', 'BGB', 'SOC'),
+						selected = START.POOL,
 						shape = 'curve',
 						icon = icon('check'),
 						status = 'success',
@@ -347,32 +303,43 @@ ui <- bootstrapPage(
 
 					p('Climate', class = 'inputHeading'),
 					prettyRadioButtons(
-						inputId = 'radioClim',
+						inputId = 'climate',
 						label = NULL,
 						choices = c('Baseline' = 'Base_Clim', 'RCP 8.5' = 'RCP85'),
-						selected = 'Base_Clim',
+						selected = START.CLIMATE,
 						shape = 'round',
 						status = 'success',
 						outline = F
 					),
 
-					p('Settings', class = 'inputHeading'),
+					p('Constraints', class = 'inputHeading'),
+					div(class = 'infoTipGrid',
+						# prettyCheckboxGroup(
+						# 	inputId = 'climate',
+						# 	label = NULL,
+						# 	choices = c('Cropland', 'Urban Areas'),
+						# 	selected = NULL,
+						# 	shape = 'curve',
+						# 	icon = icon('check'),
+						# 	status = 'success',
+						# 	outline = F
+						# ),
+						prettySwitch(
+							inputId = 'constrain',
+							label = 'Constrain',
+							value = F,
+							status = 'success',
+							fill = F,
+							width = '100%'
+						),
+						ph_i('info', weight = 'fill', size = '1x', color = '#828282', id = 'infoConstraints')
+					),
+
+					p('Overlays', class = 'inputHeading'),
 					div(class = 'infoTipGrid',
 						tagAppendAttributes(
 							prettySwitch(
-								inputId = 'switchConstraints',
-								label = 'Constrain',
-								value = F,
-								status = 'success',
-								fill = F,
-								width = '100%'
-							),
-							style = 'margin-right: 0px; margin-bottom: 4px;'
-						),
-						ph_i('info', weight = 'fill', size = '1x', color = '#828282', id = 'infoConstraints'),
-						tagAppendAttributes(
-							prettySwitch(
-								inputId = 'switchCountries',
+								inputId = 'countries',
 								label = 'Countries',
 								value = F,
 								status = 'success',
@@ -384,19 +351,7 @@ ui <- bootstrapPage(
 						ph_i('info', weight = 'fill', size = '1x', color = '#828282', id = 'infoCountries'),
 						tagAppendAttributes(
 							prettySwitch(
-								inputId = 'switchEcoregions',
-								label = 'Ecoregions',
-								value = F,
-								status = 'success',
-								fill = F,
-								width = '100%'
-							),
-							style = 'margin-right: 0px; margin-bottom: 4px;'
-						),
-						ph_i('info', weight = 'fill', size = '1x', color = '#828282', id = 'infoEcoregions'),
-						tagAppendAttributes(
-							prettySwitch(
-								inputId = 'switchPlaces',
+								inputId = 'places',
 								label = 'Places',
 								value = F,
 								status = 'success',
@@ -408,8 +363,20 @@ ui <- bootstrapPage(
 						div(),
 						tagAppendAttributes(
 							prettySwitch(
-								inputId = 'switchImagery',
+								inputId = 'imagery',
 								label = 'Imagery',
+								value = F,
+								status = 'success',
+								fill = F,
+								width = '100%'
+							),
+							style = 'margin-right: 0px; margin-bottom: 4px;'
+						),
+						div(),
+						tagAppendAttributes(
+							prettySwitch(
+								inputId = 'bioclimzones',
+								label = 'Bioclimate Zones',
 								value = F,
 								status = 'success',
 								fill = F,
@@ -419,12 +386,11 @@ ui <- bootstrapPage(
 						)
 					),
 
-					# p('Transparency', style = 'margin-left: 0px; margin-top: 4px; margin-bottom: 0px;'),
 					p('Transparency', class = 'inputHeading', style = 'margin-bottom: 0px;'),
 					setSliderColor('#69bd54', 1),
 					tagAppendAttributes(
 						sliderTextInput(
-							inputId = 'transSlider',
+							inputId = 'transparency',
 							label = NULL,
 							choices = 0:100,
 							selected = 0,
@@ -433,6 +399,67 @@ ui <- bootstrapPage(
 							post = '%'
 						),
 						style = 'padding-top: 0px; display: inline-block;'
+					)
+				)
+			)
+		),
+
+		conditionalPanel(
+			condition = "output.showPanel == 'anl'",
+			absolutePanel(
+				id = 'optionsPanel',
+				top = 0,
+				left = '70px',
+				fixed = T,
+				draggable = F,
+
+				div(id = 'optionsPanel', class = 'panelClose',
+					actionButton(
+						inputId = 'anl_close',
+						label = NULL,
+						icon = ph_i('x', weight = 'thin', size = 'sm'),
+						class = 'closePanel'
+					)
+				),
+
+				div(id = 'optionsPanel', class = 'panelHeader',	'ANALYSIS'),
+
+				div(id = 'optionsPanel', class = 'panelBody',
+					bsCollapse(
+						id = 'analysisCollapsePanel',
+						multiple = F,
+						open = 'Inspect Pixel',
+						bsCollapsePanel(
+							title = 'Inspect Pixel',
+							p('Click a pixel on the map to return it\'s value below.', style = 'font-style: italic; padding-bottom: 6px;'),
+							tableOutput(outputId = 'pixelInspector')
+						),
+						bsCollapsePanel(
+							title = 'Draw on Map',
+							p('Draw a polygon on the map. When it\'s ready, click the button below to analyze the carbon within that polygon.', style = 'font-style: italic; padding-bottom: 6px;'),
+							div(style = 'display: flex;',
+								div(id = 'draw', class = 'drawControls'),
+								actionButton(
+									inputId = 'runDrawnPoly',
+									label = NULL,
+									icon = ph_i('calculator', weight = 'thin', size = '3x'),
+									class = 'calcButton'
+								)
+							),
+							tableOutput(outputId = 'drawnPolyResults')
+						),
+						bsCollapsePanel(
+							title = 'Upload Shapefile',
+							p('The input must be a polygon shapefile comprised of four separate .shp, .shx, .dbf, and .prj files.', style = 'font-style: italic; padding-bottom: 6px;'),
+							fileInput(
+								inputId = 'shapefile',
+								label = NULL,
+								multiple = T,
+								width = '100%',
+								accept = c('.shp', '.shx', '.dbf', '.prj')
+							),
+							tableOutput(outputId = 'shapefileResults')
+						)
 					)
 				)
 			)
@@ -456,44 +483,10 @@ ui <- bootstrapPage(
 					)
 				),
 
-				div(id = 'optionsPanel', class = 'panelHeader',	'PIXEL INSPECTOR'),
+				div(id = 'optionsPanel', class = 'panelHeader',	'SEARCH'),
 
-				div(id = 'optionsPanel', class = 'panelBody',
-					verbatimTextOutput(outputId = 'pixelInspector')
-				)
-			)
-		),
-
-		conditionalPanel(
-			condition = "output.showPanel == 'ply'",
-			absolutePanel(
-				id = 'optionsPanel',
-				top = 0,
-				left = '70px',
-				fixed = T,
-				draggable = F,
-
-				div(id = 'optionsPanel', class = 'panelClose',
-					actionButton(
-						inputId = 'ply_close',
-						label = NULL,
-						icon = ph_i('x', weight = 'thin', size = 'sm'),
-						class = 'closePanel'
-					)
-				),
-
-				div(id = 'optionsPanel', class = 'panelHeader',	'AREA OF INTEREST'),
-
-				div(id = 'optionsPanel', class = 'panelBody',
-
-					p('Upload Shapefile', class = 'inputHeading'),
-					fileInput(
-						inputId = 'shpFile',
-						label = NULL,
-						multiple = T,
-						width = '100%',
-						accept = c('.shp', '.shx', '.dbf', '.prj')
-					)
+				div(id = 'optionsPanel', class = 'panelBody', style = 'text-align: left;',
+					div(id = 'searchbox')
 				)
 			)
 		),
@@ -518,48 +511,55 @@ ui <- bootstrapPage(
 
 				div(id = 'optionsPanel', class = 'panelHeader',	'INFO'),
 
-				div(id = 'optionsPanel', class = 'panelBody', style = 'text-align: justify;',
-					p('About the Site', class = 'inputHeading'),
-					p('The Land Carbon Storage Platform is a data sharing, visualization, and analysis web-app built by:'),
-					a(img(src = 'woodwell-logo-color-text.png', class = 'woodwellBig', width = '85%', height = 'auto'), href = 'https://www.woodwellclimate.org/', target = '_blank'),
-					br(),
-					p('About the Data', class = 'inputHeading'),
-					p('This site contains a first-of-its-kind data set on the global potential for increased storage of carbon on land.',
-					  'This comprehensive data set was produced by Walker et al. (2022) and is described in detail in the',
-					  a('Proceedings of the National Academy of Sciences.', href = 'https://doi.org/10.1073/pnas.2111312119', target = '_blank')
-					),
-					p('The units of the carbon density maps shown here are megagrams of carbon per hectare (Mg C ha', tags$sup(-1), ').',
-					  'The data set has been prepared at a spatial resolution of ca. 500 meters in the MODIS sinusoidal projection'),
-					p('Data can be downloaded in GeoTIFF format from the',
-					  a('Harvard Dataverse.', href = 'https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DSDDQK', target = '_blank')
-					),
-					p('Contact Us', class = 'inputHeading'),
-					a('info@woodwellclimate.org', href = 'mailto:info@woodwellclimate.org?subject=Land Carbon Storage Platform Inquiry', target='_blank'),
-					a('508-540-9900', href = 'tel:+15085409900')
+				div(id = 'optionsPanel', class = 'panelBody', style = 'text-align: left;',
+
+					HTML("
+						<p class='inputHeading'>About the Site</p>
+						<p>
+							The Land Carbon Storage Platform is an interactive data visualization, analysis, and sharing application built by:
+						</p>
+						<a href='https://www.woodwellclimate.org/' target='_blank'>
+							<img src='woodwell-logo-color-text.png' class='woodwellBig' style='width: 140px; height: auto;'>
+						</a>
+						<br>
+						<p class='inputHeading'>About the Data</p>
+						<p>
+							This site contains a first-of-its-kind comprehensive data set on the global potential for increased storage of carbon on land.
+							This data set was produced by Walker et al. (2022) and is described in detail in the
+							<a href='https://doi.org/10.1073/pnas.2111312119' target='_blank'>Proceedings of the National Academy of Sciences</a>.
+						</p>
+						<p>
+							The units of the carbon density maps shown here are megagrams of carbon per hectare (Mg C ha<sup>-1</sup>).
+							The data set has been prepared at a spatial resolution of ca. 500 meters in the MODIS sinusoidal projection.
+						</p>
+						<p>
+							Data can be downloaded in GeoTIFF format from the
+							<a href='https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DSDDQK' target='_blank'>Harvard Dataverse</a>.
+						</p>
+						<p class='inputHeading'>Contact Us</p>
+						<div class='contactGrid'>
+							<i class='ph-envelope-simple'></i>
+							<a href='mailto:info@woodwellclimate.org?subject=Land Carbon Storage Platform Inquiry' target='_blank'>info@woodwellclimate.org</a>
+							<i class='ph-phone'></i>
+							<a href='tel:+15085409900'>508-540-9900</a>
+						</div>
+					")
 				)
 			)
 		)
 
 	),
-
 	bsTooltip(
 		id = 'infoConstraints',
-		title = 'Mask areas critical to food production and human habitation.',
-		placement = 'right',
+		title = 'Mask areas critical to food production and human habitation. For more information on how these societal constraints were mapped, see <a href="https://doi.org/10.1073/pnas.2111312119" target="_blank">Walker et al. (2022)</a>.',
+		placement = 'top',
 		trigger = 'click',
 		options = list(container = 'body', delay = list(show = 0, hide = 0))
 	),
 	bsTooltip(
 		id = 'infoCountries',
-		title = 'Display countries with simplified boundaries for performance. Source: <a href="https://www.naturalearthdata.com/" target="_blank">Natural Earth</a>.',
-		placement = 'right',
-		trigger = 'click',
-		options = list(container = 'body', delay = list(show = 0, hide = 0))
-	),
-	bsTooltip(
-		id = 'infoEcoregions',
-		title = 'Display terrestrial ecoregions with simplified boundaries for performance. Source: <a href="https://ecoregions.appspot.com/" target="_blank">RESOLVE</a>.',
-		placement = 'right',
+		title = 'Display country boundaries (with simplified borders for performance). Source: <a href="https://www.naturalearthdata.com/" target="_blank">Natural Earth</a>.',
+		placement = 'top',
 		trigger = 'click',
 		options = list(container = 'body', delay = list(show = 0, hide = 0))
 	),
@@ -569,13 +569,101 @@ ui <- bootstrapPage(
 
 )
 
+gee.src <- function(pool = START.POOL, period = START.PERIOD, climate = START.CLIMATE, constrain = START.CONSTRAIN, returnEEobj = F) {
+
+	n.pools <- length(pool)
+
+	if ((constrain) & (n.pools > 0)) {
+		# original image values: 0=NoData/Mask, 1=cropland, 2=shifting agriculture, 3=grazing lands, 4=urban areas
+		msk <- ee$Image('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/Zonal')$select('Societal_Constraints')$unmask(0)$eq(0)
+	}
+
+	if (n.pools == 1) {
+		var.name <- paste0(pool, '_', period)
+		img.mgcha <- ee$Image(paste0('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/', climate))$select(var.name)$unmask(0)
+		if (constrain) img.mgcha <- img.mgcha$multiply(msk)
+		img.mgcha <- img.mgcha$updateMask(img.mgcha$gt(0))
+	} else if (n.pools == 2) {
+		var.name.1 <- paste0(pool[1], '_', period)
+		var.name.2 <- paste0(pool[2], '_', period)
+		img.1.mgcha <- ee$Image(paste0('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/', climate))$select(var.name.1)$unmask(0)
+		img.2.mgcha <- ee$Image(paste0('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/', climate))$select(var.name.2)$unmask(0)
+		img.mgcha <- img.1.mgcha$add(img.2.mgcha)
+		if (constrain) img.mgcha <- img.mgcha$multiply(msk)
+		img.mgcha <- img.mgcha$updateMask(img.mgcha$gt(0))
+	} else if (n.pools == 3) {
+		var.name.1 <- paste0(pool[1], '_', period)
+		var.name.2 <- paste0(pool[2], '_', period)
+		var.name.3 <- paste0(pool[3], '_', period)
+		img.1.mgcha <- ee$Image(paste0('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/', climate))$select(var.name.1)$unmask(0)
+		img.2.mgcha <- ee$Image(paste0('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/', climate))$select(var.name.2)$unmask(0)
+		img.3.mgcha <- ee$Image(paste0('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/', climate))$select(var.name.3)$unmask(0)
+		img.mgcha <- img.1.mgcha$add(img.2.mgcha)$add(img.3.mgcha)
+		if (constrain) img.mgcha <- img.mgcha$multiply(msk)
+		img.mgcha <- img.mgcha$updateMask(img.mgcha$gt(0))
+	}
+
+	if (n.pools > 0) {
+		max.val <- switch(
+			period,
+			'CUR' = 400,
+			'POT' = 400,
+			'UNR' = 100
+		)
+
+		col.pal <- switch(
+			period,
+			'CUR' = c('black', viridis(256)),
+			'POT' = c('black', viridis(256)),
+			'UNR' = c('black', magma(256))
+		)
+
+		gee.lyr <- Map$addLayer(
+			eeObject = img.mgcha,
+			visParams = list(
+				min = 0,
+				max = max.val,
+				palette = col.pal
+			)
+		)
+
+		img.src <- mapbox_source(
+			type = 'raster',
+			tiles = list(gee.lyr$rgee$tokens),
+			tileSize = 256
+		)
+
+		if (verbose) message(paste(c(pool, period, climate, constrain), collapse = '_'))
+
+	} else {
+		img.src <- NULL
+	}
+
+	if (returnEEobj) {
+		result <- img.mgcha
+	} else {
+		result <- img.src
+	}
+
+	return(result)
+}
+
 server <- function(input, output, session) {
 
-	rv <- reactiveValues(cur_sel = 'none', old_sel = 'none', show = 'none', cnt = -1)
+	# ---------------------------------------
+	# sidebar selection
+	# ---------------------------------------
+
+	rv <- reactiveValues(cur_sel = 'none', old_sel = 'none', show = 'none', cnt = -1, crbn_lyr_cnt = 0)
 
 	observeEvent(input$lyr_btn, {
 		rv$old_sel <- rv$cur_sel
 		rv$cur_sel <- 'lyr'
+	})
+
+	observeEvent(input$anl_btn, {
+		rv$old_sel <- rv$cur_sel
+		rv$cur_sel <- 'anl'
 	})
 
 	observeEvent(input$loc_btn, {
@@ -583,25 +671,20 @@ server <- function(input, output, session) {
 		rv$cur_sel <- 'loc'
 	})
 
-	observeEvent(input$ply_btn, {
-		rv$old_sel <- rv$cur_sel
-		rv$cur_sel <- 'ply'
-	})
-
 	observeEvent(input$inf_btn, {
 		rv$old_sel <- rv$cur_sel
 		rv$cur_sel <- 'inf'
 	})
 
-	observeEvent(input$lyr_close | input$loc_close | input$ply_close | input$inf_close, {
+	observeEvent(input$lyr_close | input$anl_close | input$loc_close | input$inf_close, {
 		rv$old_sel <- rv$cur_sel
 		rv$cur_sel <- 'none'
 	})
 
 	sidebarListen <- reactive({
 		list(
-			input$lyr_btn, input$loc_btn, input$ply_btn, input$inf_btn,
-			input$lyr_close, input$loc_close, input$ply_close, input$inf_close
+			input$lyr_btn, input$anl_btn, input$loc_btn, input$inf_btn,
+			input$lyr_close, input$anl_close, input$loc_close, input$inf_close
 		)
 	})
 
@@ -615,27 +698,14 @@ server <- function(input, output, session) {
 
 		if (rv$cur_sel == 'lyr' & (rv$old_sel != 'lyr' | rv$cnt %% 2 == 0)) {
 			rv$show <- 'lyr'
+		} else if (rv$cur_sel == 'anl' & (rv$old_sel != 'anl' | rv$cnt %% 2 == 0)) {
+			rv$show <- 'anl'
 		} else if (rv$cur_sel == 'loc' & (rv$old_sel != 'loc' | rv$cnt %% 2 == 0)) {
 			rv$show <- 'loc'
-		} else if (rv$cur_sel == 'ply' & (rv$old_sel != 'ply' | rv$cnt %% 2 == 0)) {
-			rv$show <- 'ply'
 		} else if (rv$cur_sel == 'inf' & (rv$old_sel != 'inf' | rv$cnt %% 2 == 0)) {
 			rv$show <- 'inf'
 		} else {
 			rv$show <- 'none'
-		}
-
-		if (verbose) {
-			message('======= SIDEBAR BUTTON PRESS =======')
-			message(paste('lyr:', input$lyr_btn))
-			message(paste('loc:', input$loc_btn))
-			message(paste('ply:', input$ply_btn))
-			message(paste('inf:', input$inf_btn))
-			message(paste('old:', rv$old_sel))
-			message(paste('cur:', rv$cur_sel))
-			message(paste('cnt:', rv$cnt))
-			message(paste('show:', rv$show))
-			message('====================================')
 		}
 
 	})
@@ -643,125 +713,195 @@ server <- function(input, output, session) {
 	output$showPanel <- reactive(rv$show)
 	outputOptions(output, 'showPanel', suspendWhenHidden = F)
 
-	# observe({
-	# 	if (rv$show != 'none') {
-	# 		startAnim(session, id = 'optionsPanel', type = 'slideInLeft')
-	# 	} else {
-	# 		startAnim(session, id = 'optionsPanel', type = 'slideOutLeft')
-	# 	}
-	# })
+	# ---------------------------------------
+	# define map
+	# ---------------------------------------
 
-	# define function to return shapefile from user file inputs
-	shp <- reactive({
+	output$map <- renderMapboxer({
 
-		# shpdf is a data.frame with the name, size, type and datapath of the uploaded files
-		shpdf <- input$shpFile
-
-		# name of the temporary directory where files are uploaded
-		tempdirname <- dirname(shpdf$datapath[1])
-
-		# rename files
-		for (i in 1:nrow(shpdf)) {
-			file.rename(shpdf$datapath[i], paste0(tempdirname, '/', shpdf$name[i]))
-		}
-
-		# return temporary shapefile filepath
-		shp <- paste(tempdirname, shpdf$name[grep(pattern = '*.shp$', shpdf$name)], sep = '/')
-
-		shp
-	})
-
-	map <- reactive({
-
-		sp.lines <- read_sf('shp/ne_10m_geographic_lines_WGS84_waterOnly.shp')
-
-		leaflet(options = leafletOptions(minZoom = 1.75, zoomControl = F, worldCopyJump = F, zoomSnap = 0.25)) %>%
-			addMapPane(name = 'lines', zIndex = 410) %>%
-			addMapPane(name = 'raster', zIndex = 420) %>%
-			addMapPane(name = 'placeLabels', zIndex = 430) %>%
-			addMapPane(name = 'countries', zIndex = 440) %>%
-			addMapPane(name = 'ecoregions', zIndex = 450) %>%
-			addMapPane(name = 'overlayPane', zIndex = 460) %>% # drawn polygons
-			addMapPane(name = 'polygons', zIndex = 470) %>% # uploaded polygon shapefiles
-			addFeatures(sp.lines, group = 'lines', weight = 0.6, color = '#42433B', opacity = 0.6, pane = 'lines', dashArray = '4') %>%
-			setView(lat = 20, lng = 10, zoom = 2.5) %>%
-			setMaxBounds(lng1 = -360, lat1 = -80, lng2 = 360, lat2 = 90) %>%
-			onRender("function(el, x) { L.control.zoom({ position: 'topright' }).addTo(this) }") %>%
-			addEasyButton(easyButton(
-				icon = 'fa-globe',
-				title = 'Zoom to World',
-				position = 'topright',
-				onClick = JS('function(btn, map){ map.setView([20, 10], 2.5); }'))) %>%
-			addEasyButton(easyButton(
-				icon = 'fa-crosshairs',
-				title = 'Locate Me',
-				position = 'topright',
-				onClick = JS('function(btn, map){ map.locate({setView: true}); }'))) %>%
-			addFullscreenControl(position = 'topright') %>%
-			addScaleBar(position = 'bottomright', options = scaleBarOptions(metric = T, imperial = T)) %>%
+		# initialize map with globe view and dark basemap
+		mapboxer(token = mb.token,
+				 projection = 'globe',
+				 style = 'mapbox://styles/sgorelik/clb4ehzzl000o14mlqz2cumla',
+				 renderWorldCopies = F,
+				 logoPosition = 'bottom-left',
+				 customAttribution = "<a href='https://earthengine.google.com' target='_blank'>Google Earth Engine</a> | <a href='https://shiny.rstudio.com' target='_blank'>Shiny</a>",
+				 zoom = 1.6,
+				 center = c(-10, 16)) %>%
+			# add equator and tropics lines
+			add_source(as_mapbox_source(sp.lines), id = 'lat_lines') %>%
+			add_line_layer(
+				source = 'lat_lines',
+				line_color = '#42433B',
+				line_width = 0.5,
+				line_opacity = 0.6,
+				line_dasharray = list(4, 4),
+				visibility = T
+			) %>%
+			# add imagery but don't make visible yet
+			add_layer(style = list(
+				id = 'imagery',
+				type = 'raster',
+				source = mapbox_source(
+					type = 'raster',
+					url = 'mapbox://mapbox.satellite',
+					tileSize = 256
+				),
+				layout = list(visibility = 'none')
+			)) %>%
+			# add initial carbon layer
+			add_layer(style = list(
+				id = 'carbon',
+				type = 'raster',
+				source = gee.src(pool = START.POOL, period = START.PERIOD, climate = START.CLIMATE, constrain = START.CONSTRAIN, returnEEobj = F),
+				layout = list(visibility = 'visible')
+			)) %>%
+			# add places
+			add_layer(style = list(
+				id = 'places',
+				type = 'raster',
+				source = mapbox_source(
+					type = 'raster',
+					tiles = list(paste0('https://api.mapbox.com/styles/v1/sgorelik/clb1na6a0003915o0doxdw88p/tiles/256/{z}/{x}/{y}@2x?access_token=', mb.token)),
+					# tiles = list('https://abcd.basemaps.cartocdn.com/rastertiles/voyager_only_labels/{z}/{x}/{y}{r}.png'),
+					# attribution = '&copy; <a href="https://carto.com/attributions">CARTO</a>',
+					tileSize = 256
+				),
+				layout = list(visibility = 'none')
+			)) %>%
+			# add country polygons
+			add_source(as_mapbox_source(sp.countries), id = 'countries') %>%
+			add_fill_layer(
+				source = 'countries',
+				id = 'countries',
+				fill_color = 'transparent',
+				fill_opacity = 1,
+				fill_outline_color = 'white',
+				popup = '{{NAME}}',
+				visibility = F
+			) %>%
+			#add controls
+			add_scale_control(unit = 'metric', pos = 'bottom-right') %>%
+			# add_scale_control(unit = 'imperial', pos = 'bottom-right') %>%
+			# add_mouse_position_control(mustache_template = '<b>Lat:</b> {{lat}}, <b>Lng:</b> {{lng}}', css_text = 'width: 100px;', pos = 'bottom-right') %>%
+			add_text_control(
+				pos = 'bottom-right',
+				text = "
+					<strong>Mg C ha<sup>-1</sup></strong>
+					<div class='legend-grid'>
+						<div id='item-0'><div id='colorRamp'></div></div>
+						<div id='item-1'>100</div>
+						<div id='item-2'>75</div>
+						<div id='item-3'>50</div>
+						<div id='item-4'>25</div>
+						<div id='item-5'>0</div>
+					</div>"
+			) %>%
 			onRender(
-				'function(el, x) {
-                    this.on("click", function(event) {
-                        var lat = event.latlng.lat;
-                        var lng = event.latlng.lng;
-                        var coord = [lat, lng];
-                        Shiny.onInputChange("click_coordinates", coord)
-                    });
-                }'
-			) %>%
-			addSearchOSM(options = searchOptions(
-				position = 'topright',
-				collapsed = T,
-				hideMarkerOnCollapse = T,
-				zoom = 7)
-			) %>%
-			onRender("function(el, x) { $('input.search-input')[0].placeholder = 'Search for a location...' }") %>%
-			addPmToolbar(
-				targetGroup = 'drawn',
-				toolbarOptions = pmToolbarOptions(position = 'topright', drawMarker = F, drawPolyline = F, cutPolygon = F),
-				drawOptions = pmDrawOptions(finishOn = 'dblclick', allowSelfIntersection = F),
-				editOptions = pmEditOptions(allowSelfIntersection = F),
-				cutOptions = pmCutOptions(allowSelfIntersection = F)
+				"function(el, x) {
+
+					// get map object
+					const map = mapboxer._widget[el.id].map;
+
+					// add controls
+					// const full = new mapboxgl.FullscreenControl();
+					// document.getElementById('fullControl').appendChild(full.onAdd(map));
+
+					const nav = new mapboxgl.NavigationControl({
+						showZoom: true,
+						showCompass: true
+					});
+					document.getElementById('navControl').appendChild(nav.onAdd(map));
+
+					// geocoder options: https://github.com/mapbox/mapbox-gl-geocoder/blob/main/API.md
+					const searchbox = new MapboxGeocoder({
+						accessToken: mapboxgl.accessToken,
+						mapboxgl: mapboxgl,
+						autocomplete: true,
+						limit: 3,
+						minLength: 4,
+						collapsed: false,
+						clearAndBlurOnEsc: true,
+						placeholder: 'Search for a location'
+					})
+					document.getElementById('searchbox').appendChild(searchbox.onAdd(map));
+
+					// return map coordinates on mouse click
+					map.on('click', sendCoord2R);
+					function sendCoord2R(e) {
+						Shiny.setInputValue('map_coords_onclick', e.lngLat);
+					}
+
+					// add drawing controls and send polygons to R input$drawn_poly object as JSON string
+					const draw = new MapboxDraw({
+					displayControlsDefault: false,
+						controls: {
+							polygon: true,
+							trash: true
+						}
+					});
+					document.getElementById('draw').appendChild(draw.onAdd(map));
+					map.on('draw.create', sendPoly2R);
+					map.on('draw.delete', sendPoly2R);
+					map.on('draw.update', sendPoly2R);
+					function sendPoly2R(e) {
+						const data = draw.getAll();
+						var data_json_string = JSON.stringify(data);
+						Shiny.setInputValue('drawn_poly', data_json_string);
+					}
+				}"
 			)
 
 	})
 
-	output$map <- renderLeaflet({
-		map()
+	# ---------------------------------------
+	# toggle basemap (dark vs. imagery)
+	# ---------------------------------------
+
+	observe({
+
+		mapboxer_proxy('map') %>%
+			set_layout_property(layer_id = 'imagery', property = 'visibility', value = input$imagery) %>%
+			update_mapboxer()
+
 	})
 
-	pixel.inspect <- reactive({
-		if (!is.null(input$click_coordinates)) {
-			mouse.lat <- input$click_coordinates[1]
-			mouse.lng <- input$click_coordinates[2]
-			df.pnt <- data.frame(lat = mouse.lat, lng = mouse.lng)
-			sf.pnt <- st_as_sf(df.pnt, coords = c('lng', 'lat'), crs = 4326)
-			tot.mgcha <- ee$Image('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/Base_Clim')$select('TOT_UNR')$unmask(0)
-			pnt.mgcha <- ee_extract(x = tot.mgcha, y = sf.pnt, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
-			paste('Lat:', mouse.lat, '\nLng:', mouse.lng, '\nAGB:', pnt.mgcha, 'MgC/ha')
+	# ---------------------------------------
+	# toggle map view (globe vs. flat)
+	# ---------------------------------------
+
+	# sends projection choice to javascript function defined in tags$head() on input change
+	observeEvent(input$view, {
+
+		if (input$view %% 2 == 1) {
+			proj <- 'mercator'
+			updateActionButton(session, inputId = 'view', icon = globe.icon)
 		} else {
-			'Click pixel...'
+			proj <- 'globe'
+			updateActionButton(session, inputId = 'view', icon = flat.icon)
 		}
+
+		session$sendCustomMessage('projection', proj)
+
+	}, ignoreInit = F, ignoreNULL = F)
+
+	# ---------------------------------------
+	# toggle carbon layers
+	# ---------------------------------------
+
+	carb.lyr.listen <- reactive({
+		list(input$pool, input$period, input$climate, input$constrain)
 	})
 
-	output$pixelInspector <- renderText({
-		pixel.inspect()
-	})
+	rv$cur_carb_lyr <- 'carbon'
+	rv$cur_carb_is_blank <- F
 
-	transparency <- reactive({
-		(1 - (as.numeric(input$transSlider) / 100))
-	})
+	observeEvent(carb.lyr.listen(), {
 
-	layerListen <- reactive({
-		list(input$checkPool, input$radioTime, input$radioClim, input$transSlider, input$switchConstraints)
-	})
+		clim.sel <- input$climate
+		pool.sel.cur <- input$pool
+		per.sel.cur <- input$period
 
-	observeEvent(layerListen(), {
-
-		if (verbose) message('check climate, update UI...')
-		clim.sel <- input$radioClim
-		per.sel.cur <- input$radioTime
-		pool.sel.cur <- input$checkPool
 		if (clim.sel == 'Base_Clim') {
 			per.opts <- c('Current' = 'CUR', 'Potential' = 'POT', 'Unrealized Potential' = 'UNR')
 			per.sel.new <- per.sel.cur
@@ -769,6 +909,7 @@ server <- function(input, output, session) {
 			pool.opts <- c('Aboveground' = 'AGB', 'Belowground' = 'BGB', 'Soil' = 'SOC')
 			pool.sel.new <- pool.sel.cur
 		}
+
 		if (clim.sel == 'RCP85') {
 			per.opts <- c('Potential' = 'POT', 'Unrealized Potential' = 'UNR')
 			per.sel.new <- ifelse(per.sel.cur == 'CUR', 'POT', per.sel.cur)
@@ -776,9 +917,10 @@ server <- function(input, output, session) {
 			pool.opts <- c('Aboveground' = 'AGB', 'Belowground' = 'BGB')
 			pool.sel.new <- unlist(strsplit(gsub('SOC', '', paste0(pool.sel.cur, collapse = '-')), split = '-'))
 		}
+
 		updatePrettyRadioButtons(
 			session = session,
-			inputId = 'radioTime',
+			inputId = 'period',
 			choices = per.opts,
 			selected = per.sel.new,
 			prettyOptions = list(
@@ -789,7 +931,7 @@ server <- function(input, output, session) {
 		)
 		updatePrettyCheckboxGroup(
 			session = session,
-			inputId = 'checkPool',
+			inputId = 'pool',
 			choices = pool.opts,
 			selected = pool.sel.new,
 			prettyOptions = list(
@@ -800,282 +942,300 @@ server <- function(input, output, session) {
 			)
 		)
 
-		if (verbose) message('determine raster layer to render on map...')
+		# count number of pools selected, keep previous count too
 		n.pools <- length(pool.sel.new)
+		rv$old_carb_is_blank <- rv$cur_carb_is_blank
+		rv$cur_carb_is_blank <- ifelse(n.pools == 0, T, F)
 
-		if (input$switchConstraints) {
-			# original image values: 0=NoData/Mask, 1=cropland, 2=shifting agriculture, 3=grazing lands, 4=urban areas
-			msk <- ee$Image('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/Zonal')$select('Societal_Constraints')$unmask(0)$eq(0)
+		# save previous carbon layer id and create new id for current carbon layer
+		rv$crbn_lyr_cnt <- rv$crbn_lyr_cnt + 1
+		rv$old_carb_lyr <- rv$cur_carb_lyr
+		rv$cur_carb_lyr <- paste0('carbon', rv$crbn_lyr_cnt)
+
+		# message('~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~')
+		# df.carb <- data.frame(OLD = c(rv$old_carb_lyr), CUR = c(rv$cur_carb_lyr))
+		# message(paste0(capture.output(df.carb), collapse = '\n'))
+
+		if (rv$cur_carb_is_blank & !rv$old_carb_is_blank) {
+
+			mapboxer_proxy('map') %>%
+				set_layout_property(layer_id = rv$old_carb_lyr, property = 'visibility', value = F) %>%
+				update_mapboxer()
+
+		} else if (!rv$cur_carb_is_blank & rv$old_carb_is_blank) {
+
+			mapboxer_proxy('map') %>%
+				add_layer(style = list(
+					id = rv$cur_carb_lyr,
+					type = 'raster',
+					source = gee.src(pool = pool.sel.new, period = per.sel.new, climate = clim.sel, constrain = input$constrain, returnEEobj = F),
+					layout = list('visibility' = 'visible')
+				)) %>%
+				update_mapboxer()
+
+			session$sendCustomMessage('moveLayerBeforeLayer', message = list(layerID = rv$cur_carb_lyr, beforeID = 'countries'))
+
+		} else if (!rv$cur_carb_is_blank & !rv$old_carb_is_blank) {
+
+			mapboxer_proxy('map') %>%
+				set_layout_property(layer_id = rv$old_carb_lyr, property = 'visibility', value = F) %>%
+				add_layer(style = list(
+					id = rv$cur_carb_lyr,
+					type = 'raster',
+					source = gee.src(pool = pool.sel.new, period = per.sel.new, climate = clim.sel, constrain = input$constrain, returnEEobj = F),
+					layout = list('visibility' = 'visible')
+				)) %>%
+				update_mapboxer()
+
+			session$sendCustomMessage('moveLayerBeforeLayer', message = list(layerID = rv$cur_carb_lyr, beforeID = 'countries'))
+
 		}
 
-		if (n.pools == 1) {
-			add2map <- T
-			var.name <- paste0(pool.sel.new, '_', per.sel.new)
-			if (verbose) message(var.name)
-			img.mgcha <- ee$Image(paste0('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/', clim.sel))$select(var.name)$unmask(0)
-			if (input$switchConstraints) img.mgcha <- img.mgcha$multiply(msk)
-			img.mgcha <- img.mgcha$updateMask(img.mgcha$gt(0))
-		} else if (n.pools == 2) {
-			add2map <- T
-			var.name.1 <- paste0(pool.sel.new[1], '_', per.sel.new)
-			var.name.2 <- paste0(pool.sel.new[2], '_', per.sel.new)
-			if (verbose) message(var.name.1)
-			if (verbose) message(var.name.2)
-			img.1.mgcha <- ee$Image(paste0('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/', clim.sel))$select(var.name.1)$unmask(0)
-			img.2.mgcha <- ee$Image(paste0('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/', clim.sel))$select(var.name.2)$unmask(0)
-			img.mgcha <- img.1.mgcha$add(img.2.mgcha)
-			if (input$switchConstraints) img.mgcha <- img.mgcha$multiply(msk)
-			img.mgcha <- img.mgcha$updateMask(img.mgcha$gt(0))
-		} else if (n.pools == 3) {
-			add2map <- T
-			var.name.1 <- paste0(pool.sel.new[1], '_', per.sel.new)
-			var.name.2 <- paste0(pool.sel.new[2], '_', per.sel.new)
-			var.name.3 <- paste0(pool.sel.new[3], '_', per.sel.new)
-			if (verbose) message(var.name.1)
-			if (verbose) message(var.name.2)
-			if (verbose) message(var.name.3)
-			img.1.mgcha <- ee$Image(paste0('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/', clim.sel))$select(var.name.1)$unmask(0)
-			img.2.mgcha <- ee$Image(paste0('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/', clim.sel))$select(var.name.2)$unmask(0)
-			img.3.mgcha <- ee$Image(paste0('projects/woodwell-biomass/assets/Walker_etal_2022_PNAS/', clim.sel))$select(var.name.3)$unmask(0)
-			img.mgcha <- img.1.mgcha$add(img.2.mgcha)$add(img.3.mgcha)
-			if (input$switchConstraints) img.mgcha <- img.mgcha$multiply(msk)
-			img.mgcha <- img.mgcha$updateMask(img.mgcha$gt(0))
+	}, ignoreInit = T)
+
+	# ---------------------------------------
+	# carbon layer legend
+	# ---------------------------------------
+
+	observeEvent(input$period, {
+
+		if (input$period == 'UNR') {
+			new.pal.cols <- magma(256)
+			item.1 <- 100
+			item.2 <- 75
+			item.3 <- 50
+			item.4 <- 25
+			item.5 <- 0
 		} else {
-			add2map <- F
-			if (verbose) message('no layer')
+			new.pal.cols <- viridis(256)
+			item.1 <- 400
+			item.2 <- 300
+			item.3 <- 200
+			item.4 <- 100
+			item.5 <- 0
 		}
 
-		if (add2map) {
+		new.pal.style <- paste0('linear-gradient(0deg, #000000, ', paste0(new.pal.cols, collapse = ', '), ')')
 
-			max.val <- switch(
-				per.sel.new,
-				'CUR' = 400,
-				'POT' = 400,
-				'UNR' = 100
+		session$sendCustomMessage('legend', message = list(
+			style = new.pal.style,
+			item1 = item.1,
+			item2 = item.2,
+			item3 = item.3,
+			item4 = item.4,
+			item5 = item.5
+		))
+
+	}, ignoreInit = F)
+
+	# ---------------------------------------
+	# carbon layer transparency
+	# ---------------------------------------
+
+	observeEvent(input$transparency, {
+		opacity <- (1 - (as.numeric(input$transparency) / 100))
+		mapboxer_proxy('map') %>%
+			set_paint_property(layer_id = rv$cur_carb_lyr, property = 'raster-opacity', value = opacity) %>%
+			update_mapboxer()
+	})
+
+	# ---------------------------------------
+	# toggle countries
+	# ---------------------------------------
+
+	observeEvent(input$countries, {
+
+		mapboxer_proxy('map') %>%
+			set_layout_property(layer_id = 'countries', property = 'visibility', value = input$countries) %>%
+			update_mapboxer()
+
+		if (input$countries) {
+			session$sendCustomMessage('moveLayerBeforeLayer', message = list(layerID = 'countries', beforeID = 'gl-draw-polygon-fill-inactive.cold'))
+		}
+
+	})
+
+	# ---------------------------------------
+	# toggle place names
+	# ---------------------------------------
+
+	observeEvent(input$places, {
+
+		mapboxer_proxy('map') %>%
+			set_layout_property(layer_id = 'places', property = 'visibility', value = input$places) %>%
+			update_mapboxer()
+
+		if (input$places) {
+			session$sendCustomMessage('moveLayerToTop', 'places')
+
+			# alos bring up country outlines
+			updatePrettySwitch(
+				session,
+				inputId = 'countries',
+				value = T
 			)
 
-			col.pal <- switch(
-				per.sel.new,
-				'CUR' = c('black', viridis(255)),
-				'POT' = c('black', viridis(255)),
-				'UNR' = c('black', magma(255))
-			)
+		}
 
-			vis.params <- list(
-				min = 0,
-				max = max.val,
-				palette = col.pal
-			)
+	})
 
-			m1 <- Map$addLayer(
-				eeObject = img.mgcha,
-				visParams = vis.params
-			)
+	# ---------------------------------------
+	# inspect pixel
+	# ---------------------------------------
 
-			leg.pal <- colorNumeric(
-				palette = rev(col.pal),
-				domain = rev(c(0, max.val))
-			)
+	# change cursor to crosshair when user is in pixel inspector panel
+	set_cursor <- reactive({
+		if ((rv$show == 'anl') & (input$analysisCollapsePanel == 'Inspect Pixel')) {
+			cursor <- 'crosshair'
+		} else {
+			cursor <- 'auto'
+		}
+		style <- paste0('#map canvas { cursor: ', cursor, '; }')
+		return(style)
+	})
 
-			leafletProxy('map', session) %>%
-				clearGroup(group = 'raster') %>%
-				removeControl(layerId = 'legend') %>%
-				addTiles(
-					urlTemplate = m1$rgee$tokens,
-					layerId = 'carbonLayer',
-					group = 'raster',
-					options = tileOptions(
-						opacity = transparency(),
-						noWrap = T,
-						bounds = list(list(-90, -180), list(90, 180)),
-						pane = 'raster'
-					)
+	output$cursor_css <- renderUI({
+		tags$style(HTML(set_cursor()))
+	})
+
+	# compute carbon density for selected pixel
+	rv$df_pixel <- data.frame()
+	observeEvent(input$map_coords_onclick, {
+
+		# only compute if user is in pixel inspector panel
+		if ((rv$show == 'anl') & (input$analysisCollapsePanel == 'Inspect Pixel')) {
+
+			# convert coords to sf object
+			coords <- input$map_coords_onclick
+			mouse.lng <- coords$lng
+			mouse.lat <- coords$lat
+			df.pnt <- data.frame(lat = mouse.lat, lng = mouse.lng)
+			sf.pnt <- st_as_sf(df.pnt, coords = c('lng', 'lat'), crs = 4326)
+
+			# get current carbon layer as EE object
+			img.mgcha <- gee.src(pool = input$pool, period = input$period, climate = input$climate, constrain = input$constrain, returnEEobj = T)
+
+			# extract carbon density at location
+			df.pnt.mgcha <- ee_extract(x = img.mgcha, y = sf.pnt, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
+
+			# format output table
+			pnt.mgcha <- ifelse(nrow(df.pnt.mgcha) > 0, as.numeric(df.pnt.mgcha), 0)
+			rv$df_pixel <- data.frame(Long = round(mouse.lng, digits = 5), Lat = round(mouse.lat, digits = 5), MgCha = pnt.mgcha)
+
+		}
+
+	})
+
+	output$pixelInspector <- renderTable({
+		rv$df_pixel
+	}, rownames = F, spacing = 'xs', striped = F, hover = F, bordered = F)
+
+
+	# ---------------------------------------
+	# analyze drawn polygons
+	# ---------------------------------------
+
+	analyze.drawn.polygon <- eventReactive(input$runDrawnPoly, {
+
+		if (!is.null(input$drawn_poly)) {
+
+			json.str <- input$drawn_poly
+			sp.poly <- geojson_sf(json.str)
+
+			# get current carbon layer as EE object
+			img.mgcha <- gee.src(pool = input$pool, period = input$period, climate = input$climate, constrain = input$constrain, returnEEobj = T)
+			img.mgc <- img.mgcha$multiply(21.46587)
+
+			# calculate carbon stock and avg density
+			df.avg <- ee_extract(x = img.mgcha, y = sp.poly, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
+			df.sum <- ee_extract(x = img.mgc, y = sp.poly, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
+
+			df <- data.frame(Mean_MgCha = df.avg$AGB_UNR, Total_MgC = df.sum$AGB_UNR)
+			return(df)
+
+		}
+	})
+
+	output$drawnPolyResults <- renderTable({
+		analyze.drawn.polygon()
+	}, rownames = F, spacing = 'xs', striped = F, hover = F, bordered = F, digits = 1)
+
+
+	# ---------------------------------------
+	# analyze uploaded polygon shapefile
+	# ---------------------------------------
+
+	# define function to return shapefile from user file inputs
+	shp <- reactive({
+
+		# shpdf is a data.frame with the name, size, type and datapath of the uploaded files
+		shpdf <- input$shapefile
+
+		# name of the temporary directory where files are uploaded
+		tempdirname <- dirname(shpdf$datapath[1])
+
+		# rename files
+		for (i in 1:nrow(shpdf)) {
+			file.rename(shpdf$datapath[i], paste0(tempdirname, '/', shpdf$name[i]))
+		}
+
+		# temporary shapefile filepath
+		shp <- paste(tempdirname, shpdf$name[grep(pattern = '*.shp$', shpdf$name)], sep = '/')
+
+		# read in shapefile and reproject
+		sp <- read_sf(shp) %>%
+			st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
+
+		return(sp)
+	})
+
+	observeEvent(input$shapefile, {
+
+		if (nrow(input$shapefile) > 1) {
+
+			sp.user <- shp()
+			bbox <- st_bbox(sp.user)
+			mapboxer_proxy('map') %>%
+				add_source(as_mapbox_source(sp.user), id = 'user_poly') %>%
+				add_line_layer(
+					source = 'user_poly',
+					id = 'user_poly',
+					line_color = 'white',
+					line_opacity = 0.8,
+					line_width = 3,
+					visibility = T
 				) %>%
-				addLegend(
-					layerId = 'legend',
-					position = 'bottomright',
-					pal = leg.pal,
-					values = c(0, max.val),
-					bins = 4,
-					title = 'Mg C ha<sup>-1</sup>',
-					opacity = 1,
-					labFormat = labelFormat(transform = function(x) sort(x, decreasing = T))
-				)
+				fit_bounds(bbox, padding = 40, offset = c(80, 0)) %>%
+				update_mapboxer()
 
-		} else {
-
-			leafletProxy('map', session) %>%
-				clearGroup(group = 'raster') %>%
-				removeControl(layerId = 'legend')
-
-		}
-	})
-
-	shpListen <- reactive({
-		list(input$shpFile)
-	})
-
-	observeEvent(shpListen(), {
-		req(input$shpFile)
-		if (nrow(input$shpFile) > 1) {
-			f <- shp()
-
-			sp <- read_sf(f) %>%
-				st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
-
-			bbox <- st_bbox(sp) %>%
-				as.vector()
-
-			leafletProxy('map', session) %>%
-				clearGroup(group = 'polygon') %>%
-				addFeatures(sp, group = 'polygon', pane = 'polygons', weight = 3, color = '#3388ff', opacity = 0.8, fillOpacity = 0) %>%
-				flyToBounds(lng1 = bbox[1], lat1 = bbox[2], lng2 = bbox[3], lat2 = bbox[4])
-		}
-
-	})
-
-	observeEvent(input$switchCountries, {
-
-		if (!input$switchCountries) {
-
-			leafletProxy('map', session) %>%
-				addTiles(group = 'countries', options = tileOptions(opacity = 0)) %>%
-				clearGroup(group = 'countries')
-
-		}
-
-		if (input$switchCountries) {
-
-			polys <- read_sf('shp/ne_10m_admin_0_countries_WGS84_small.shp')
-
-			leafletProxy('map', session) %>%
-				clearGroup(group = 'countries') %>%
-				addFeatures(
-					polys,
-					group = 'countries',
-					pane = 'countries',
-					weight = 0.8,
-					color = 'white',
-					opacity = 0.6,
-					fillOpacity = 0,
-					popup = ~htmlEscape(NAME),
-					highlightOptions = highlightOptions(color = 'white', weight = 2, opacity = 1, bringToFront = T))
-		}
-
-	})
-
-	observeEvent(input$switchEcoregions, {
-
-		if (!input$switchEcoregions) {
-
-			leafletProxy('map', session) %>%
-				addTiles(group = 'ecoregions', options = tileOptions(opacity = 0)) %>%
-				clearGroup(group = 'ecoregions')
-
-		}
-
-		if (input$switchEcoregions) {
-
-			polys <- read_sf('shp/Ecoregions2017_WGS84_smaller.shp')
-
-			leafletProxy('map', session) %>%
-				clearGroup(group = 'ecoregions') %>%
-				addFeatures(
-					polys,
-					group = 'ecoregions',
-					pane = 'ecoregions',
-					weight = 0.8,
-					color = 'white',
-					opacity = 0.6,
-					fillOpacity = 0,
-					popup = ~paste('Ecoregion:', ECO_NAME, '<br>Biome:', BIOME_NAME, '<br>Realm:', REALM),
-					highlightOptions = highlightOptions(color = 'white', weight = 2, opacity = 1, bringToFront = T))
+			session$sendCustomMessage('moveLayerToTop', 'user_poly')
 
 		}
 
 	})
 
-	rv$esri.attr <- NULL
+	analyze.user.polygon <- reactive({
 
-	observeEvent(input$switchImagery, {
+		req(input$shapefile)
+		sp.user <- shp()
 
-		# dark
-		if (!input$switchImagery) {
-			leafletProxy('map', session) %>%
-				clearGroup(group = 'basemap') %>%
-				addTiles(
-					urlTemplate = paste0('https://api.mapbox.com/styles/v1/sgorelik/clawraplt001g16pifnv8l4xa/tiles/256/{z}/{x}/{y}@2x?access_token=', mb.token),
-					attribution = paste(c(
-						"<a href='https://www.mapbox.com/about/maps/' target='_blank'>Mapbox</a>",
-						"<a href='https://www.openstreetmap.org/copyright' target='_blank'>OpenStreetMap</a>",
-						"<a href='https://earthengine.google.com' target='_blank'>Google Earth Engine</a>",
-						"<a href='https://shiny.rstudio.com' target='_blank'>R Shiny</a>"), collapse = ' | '),
-					group = 'basemap',
-					options = tileOptions(noWrap = T, bounds = list(list(-90, -180), list(90, 180))))
-		}
+		# get current carbon layer as EE object
+		img.mgcha <- gee.src(pool = input$pool, period = input$period, climate = input$climate, constrain = input$constrain, returnEEobj = T)
+		img.mgc <- img.mgcha$multiply(21.46587)
 
-		# imagery
-		if (input$switchImagery) {
+		# calculate carbon stock and avg density
+		df.avg <- ee_extract(x = img.mgcha, y = sp.user, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
+		df.sum <- ee_extract(x = img.mgc, y = sp.user, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
 
-			if (is.null(rv$esri.attr)) {
-				curl.req <- curl_fetch_memory(paste0('https://basemaps-api.arcgis.com/arcgis/rest/services/styles/ArcGIS:Imagery?type=style&token=', esri.key))
-				esri.meta <- parse_json(rawToChar(curl.req$content))
-				rv$esri.attr <- esri.meta$sources$esri$attribution
-				if (verbose) message(rv$esri.attr)
-			}
-
-			leafletProxy('map', session) %>%
-				clearGroup(group = 'basemap') %>%
-				# addTiles(
-				# 	urlTemplate = 'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}',
-				# 	attribution = paste(c(
-				# 		"<a href='https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer' target='_blank'>U.S. Geological Survey</a>",
-				# 		"<a href='https://earthengine.google.com' target='_blank'>Google Earth Engine</a>",
-				# 		"<a href='https://shiny.rstudio.com' target='_blank'>R Shiny</a>"), collapse = ' | '),
-				# 	group = 'basemap',
-				# 	options = tileOptions(noWrap = T, bounds = list(list(-90, -180), list(90, 180))))
-				addTiles(
-					urlTemplate = paste0('https://ibasemaps-api.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}?token=', esri.key),
-					attribution = paste(c(
-						"Imagery Powered by <a href='https://www.esri.com/en-us/home' target='_blank'>Esri</a>",
-						paste('Imagery', rv$esri.attr),
-						"<a href='https://earthengine.google.com' target='_blank'>Google Earth Engine</a>",
-						"<a href='https://shiny.rstudio.com' target='_blank'>R Shiny</a>"), collapse = ' | '),
-					group = 'basemap',
-					options = tileOptions(noWrap = T, bounds = list(list(-90, -180), list(90, 180))))
-
-		}
+		df <- data.frame(Mean_MgCha = df.avg$AGB_UNR, Total_MgC = df.sum$AGB_UNR)
+		return(df)
 
 	})
 
-	observeEvent(input$switchPlaces, {
-
-		# no place labels
-		if (!input$switchPlaces) {
-			leafletProxy('map', session) %>%
-				addTiles(group = 'placeLabels', options = tileOptions(opacity = 0)) %>%
-				clearGroup(group = 'placeLabels')
-		}
-
-		# place labels
-		if (input$switchPlaces) {
-			leafletProxy('map', session) %>%
-				clearGroup(group = 'placeLabels') %>%
-				addTiles(
-					urlTemplate = paste0('https://api.mapbox.com/styles/v1/sgorelik/clb1na6a0003915o0doxdw88p/tiles/256/{z}/{x}/{y}@2x?access_token=', mb.token),
-					attribution = paste(
-						"Places:",
-						"<a href='https://www.mapbox.com/about/maps/' target='_blank'>Mapbox</a> &",
-						"<a href='https://www.openstreetmap.org/copyright' target='_blank'>OpenStreetMap</a>"),
-					group = 'placeLabels',
-					options = tileOptions(pane = 'placeLabels', noWrap = T, bounds = list(list(-90, -180), list(90, 180))))
-		}
-	})
+	output$shapefileResults <- renderTable({
+		analyze.user.polygon()
+	}, rownames = F, spacing = 'xs', striped = F, hover = F, bordered = F, digits = 1)
 
 }
 
-# df.avg <- ee_extract(x = img.unr.mgcha, y = sp, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
-# df.sum <- ee_extract(x = img.mgcha$divide(21.46587), y = sp, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
-# df <- data.frame(mean_mgcha = df.avg$AGB_UNR, sum_mgc = df.sum$AGB_UNR)
-
-shinyApp(ui = ui, server = server)
+shinyApp(ui, server)
