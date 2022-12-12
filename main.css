@@ -10,6 +10,7 @@ html, body {
 	left: 0;
 	right: 0;
 }
+
 .shinybusy-overlay {
 	background-color: black;
 }
@@ -191,6 +192,19 @@ img.woodwellBig:hover {
 #pixelInspector {
 	overflow: hidden;
 }
+
+#inputFilesMessage {
+	white-space: pre-wrap;
+}
+#inputFilesError {
+	white-space: pre-wrap;
+	color: red;
+}
+#shpTypeError {
+	color: red;
+	font-weight: bold;
+}
+
 
 /* Mapbox adjusements to match app style better
 a.mapboxgl-ctrl-logo {

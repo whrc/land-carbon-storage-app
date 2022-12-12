@@ -83,8 +83,8 @@ if (!dev) {
 # -------------------------------------------------------------------------------
 
 START.VIEW <- 'GLOBE'
-START.POOL <- c('AGB', 'BGB')
-START.PERIOD <- 'UNR'
+START.PERIOD <- 'CUR'
+START.POOL <- c('AGB', 'BGB', 'SOC')
 START.CLIMATE <- 'Base_Clim'
 START.CONSTRAIN <- F
 
@@ -106,7 +106,7 @@ sp.bioclim <- read_sf('shp/gez_2010_wgs84_dissolved_small.shp') %>%
 		group == 'Tropical' ~ '#253494'
 	))
 
-logo.href.path <- ifelse(dev, '/', '/pot-c-app')
+logo.href.path <- ifelse(dev, '/', '/land-carbon-storage-app')
 
 globe.icon <- ph_i('globe', weight = 'bold', style = 'vertical-align: -0.26em;')
 flat.icon <- ph_i('map-trifold', weight = 'bold', style = 'vertical-align: -0.26em;')
@@ -169,6 +169,13 @@ ui <- bootstrapPage(
 				map.moveLayer(layerID);
 			});
 		"),
+		# tags$script("
+		# 	Shiny.addCustomMessageHandler('closeTooltips', function(name) {
+		# 		function myFunction() {
+		# 			document.getElementById(name).click();
+		# 		}
+		# 	});
+		# "),
 
 		# for mapbox draw control
 		tags$script(src = 'https://api.mapbox.com/mapbox-gl-js/plugins/mapbox-gl-draw/v1.3.0/mapbox-gl-draw.js'),
@@ -435,12 +442,17 @@ ui <- bootstrapPage(
 						open = 'Inspect Pixel',
 						bsCollapsePanel(
 							title = 'Inspect Pixel',
-							p('Click a pixel on the map to return it\'s value below.', style = 'font-style: italic; padding-bottom: 6px;'),
+							p('Click a pixel on the map to return it\'s value below.', style = 'padding-bottom: 6px;'),
 							tableOutput(outputId = 'pixelInspector')
 						),
 						bsCollapsePanel(
 							title = 'Draw Shape',
-							p('Click the polygon icon below to enable the drawing tool. Then click on the map to select your first vertex. Click to create additional vertices. Double-click to add your last vertex, and the polygon will be created. After the polygon is created, click the calculator icon below to analyze the carbon within that polygon. To delete the polygon, select it and then click the trash icon.', style = 'font-style: italic; padding-bottom: 6px;'),
+							p('1. Click the polygon icon below to enable the drawing tool.'),
+							p('2. Click on the map to select your first vertex.'),
+							p('3. Click to create additional vertices.'),
+							p('4. Double-click to add your last vertex, and the polygon will be created.'),
+							p('5. To analyze the carbon within your polygon, click the calculator icon.'),
+							p('6. To delete the polygon, select it and then click the trash icon.', style = 'padding-bottom: 6px;'),
 							div(style = 'display: flex;',
 								div(id = 'draw', class = 'drawControls'),
 								actionButton(
@@ -454,7 +466,8 @@ ui <- bootstrapPage(
 						),
 						bsCollapsePanel(
 							title = 'Upload Shapefile',
-							p('Upload a polygon shapefile to analyze the carbon within it\'s boundaries. Results will show below. You must provide a polygon shapefile comprised of four separate .shp, .shx, .dbf, and .prj files.', style = 'font-style: italic; padding-bottom: 6px;'),
+							p('Upload a polygon shapefile to analyze the carbon within it\'s boundaries. Results will show below.', style = 'padding-bottom: 6px;'),
+							p('Note, when selecting a .shp file, be sure to select the related .dbf, .shx and .prj files (i.e., you must provide exactly 4 files).', style = 'font-style: italic; padding-bottom: 6px;'),
 							fileInput(
 								inputId = 'shapefile',
 								label = NULL,
@@ -462,6 +475,10 @@ ui <- bootstrapPage(
 								width = '100%',
 								accept = c('.shp', '.shx', '.dbf', '.prj')
 							),
+							textOutput(outputId = 'inputFilesMessage'),
+							textOutput(outputId = 'inputFilesError'),
+							br(),
+							textOutput(outputId = 'shpTypeError'),
 							tableOutput(outputId = 'shapefileResults')
 						)
 					)
@@ -540,12 +557,12 @@ ui <- bootstrapPage(
 							Data can be downloaded in GeoTIFF format from the
 							<a href='https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DSDDQK' target='_blank'>Harvard Dataverse</a>.
 						</p>
-						<p class='inputHeading'>Contact Us</p>
+						<p class='inputHeading'>Contact</p>
 						<div class='contactGrid'>
+							<i class='ph-user'></i>
+							<div>Seth Gorelik</div>
 							<i class='ph-envelope-simple'></i>
-							<a href='mailto:info@woodwellclimate.org?subject=Land Carbon Storage Platform Inquiry' target='_blank'>info@woodwellclimate.org</a>
-							<i class='ph-phone'></i>
-							<a href='tel:+15085409900'>508-540-9900</a>
+							<a href='mailto:sgorelik@woodwellclimate.org?subject=Land Carbon Storage Platform Inquiry&cc=wwalker@woodwellclimate.org' target='_blank'>sgorelik@woodwellclimate.org</a>
 						</div>
 					")
 				)
@@ -557,14 +574,14 @@ ui <- bootstrapPage(
 		id = 'infoConstraints',
 		title = 'Mask areas critical to food production and human habitation. For more information on how these societal constraints were mapped, see <a href="https://doi.org/10.1073/pnas.2111312119" target="_blank">Walker et al. (2022)</a>.',
 		placement = 'top',
-		trigger = 'click',
+		trigger = 'hover',
 		options = list(container = 'body', delay = list(show = 0, hide = 0))
 	),
 	bsTooltip(
 		id = 'infoCountries',
 		title = 'Display country boundaries (with simplified borders for performance). Source: <a href="https://www.naturalearthdata.com/" target="_blank">Natural Earth</a>.',
 		placement = 'top',
-		trigger = 'click',
+		trigger = 'hover',
 		options = list(container = 'body', delay = list(show = 0, hide = 0))
 	),
 
@@ -573,6 +590,7 @@ ui <- bootstrapPage(
 
 )
 
+# define function to return either mapbox source or EE image object for user selected carbon layer
 gee.src <- function(pool = START.POOL, period = START.PERIOD, climate = START.CLIMATE, constrain = START.CONSTRAIN, returnEEobj = F) {
 
 	n.pools <- length(pool)
@@ -652,6 +670,27 @@ gee.src <- function(pool = START.POOL, period = START.PERIOD, climate = START.CL
 	return(result)
 }
 
+# define a function to verify that there are exactly 4 files
+# provided by user and they are a .shp, .shx, .prj, and .dbf
+check_input_files <- function(shpdf) {
+	files <- as.character(shpdf$name)
+	usr.exts <- tools::file_ext(files)
+	req.exts <- c('shp', 'shx', 'dbf', 'prj')
+	if (length(files) == 4 & all(req.exts %in% usr.exts)) {
+		return(TRUE)
+	} else {
+		return(FALSE)
+	}
+}
+
+# define function to get feature type of shapefile without reading shapefile into memory
+check_shp_type <- function(shp) {
+	wkb.opts <- c('wkbPoint', 'wkbLineString', 'wkbPolygon', 'wkbMultiPoint', 'wkbMultiLineString', 'wkbMultiPolygon', 'wkbGeometryCollection')
+	shp.info <- rgdal::ogrInfo(shp)
+	shp.wkb <- wkb.opts[shp.info$eType]
+	return(gsub('wkb', '', shp.wkb))
+}
+
 server <- function(input, output, session) {
 
 	# ---------------------------------------
@@ -693,6 +732,11 @@ server <- function(input, output, session) {
 	})
 
 	observeEvent(sidebarListen(), {
+
+		# shinyjs::hide('infoConstraints', anim = T)
+		# shinyjs::hide('infoCountries', anim = T)
+
+		# session$sendCustomMessage('closeTooltips', 'infoConstraints')
 
 		if (rv$cur_sel == rv$old_sel) {
 			rv$cnt <- rv$cnt + 1
@@ -796,9 +840,6 @@ server <- function(input, output, session) {
 				visibility = F
 			) %>%
 			#add controls
-			# add_scale_control(unit = 'metric', pos = 'bottom-right') %>%
-			# add_scale_control(unit = 'imperial', pos = 'bottom-right') %>%
-			# add_mouse_position_control(mustache_template = '<b>Lat:</b> {{lat}}, <b>Lng:</b> {{lng}}', css_text = 'width: 100px;', pos = 'bottom-right') %>%
 			add_text_control(
 				pos = 'bottom-right',
 				text = "
@@ -853,7 +894,7 @@ server <- function(input, output, session) {
 
 					// add drawing controls and send polygons to R input$drawn_poly object as JSON string
 					const draw = new MapboxDraw({
-					displayControlsDefault: false,
+						displayControlsDefault: false,
 						controls: {
 							polygon: true,
 							trash: true
@@ -1140,7 +1181,7 @@ server <- function(input, output, session) {
 	observeEvent(input$map_coords_onclick, {
 
 		# only compute if user is in pixel inspector panel
-		if ((rv$show == 'anl') & (input$analysisCollapsePanel == 'Inspect Pixel')) {
+		if ((rv$show == 'anl') & (req(input$analysisCollapsePanel) == 'Inspect Pixel')) {
 
 			# convert coords to sf object
 			coords <- input$map_coords_onclick
@@ -1179,15 +1220,20 @@ server <- function(input, output, session) {
 			json.str <- input$drawn_poly
 			sp.poly <- geojson_sf(json.str)
 
+			message(input$pool)
+			message(input$period)
+			message(input$climate)
+			message(input$constrain)
+
 			# get current carbon layer as EE object
 			img.mgcha <- gee.src(pool = input$pool, period = input$period, climate = input$climate, constrain = input$constrain, returnEEobj = T)
 			img.mgc <- img.mgcha$multiply(21.46587)
 
 			# calculate carbon stock and avg density
-			df.avg <- ee_extract(x = img.mgcha, y = sp.poly, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
-			df.sum <- ee_extract(x = img.mgc, y = sp.poly, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
+			df.avg <- ee_extract(x = img.mgcha$rename('Mean_MgCha'), y = sp.poly, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
+			df.sum <- ee_extract(x = img.mgc$rename('Total_MgC'), y = sp.poly, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
 
-			df <- data.frame(Mean_MgCha = df.avg$AGB_UNR, Total_MgC = df.sum$AGB_UNR)
+			df <- data.frame(Mean_MgCha = df.avg$Mean_MgCha, Total_MgC = df.sum$Total_MgC)
 			return(df)
 
 		}
@@ -1202,7 +1248,7 @@ server <- function(input, output, session) {
 	# analyze uploaded polygon shapefile
 	# ---------------------------------------
 
-	# define function to return shapefile from user file inputs
+	# reactive function to return shapefile from user file inputs
 	shp <- reactive({
 
 		# shpdf is a data.frame with the name, size, type and datapath of the uploaded files
@@ -1219,19 +1265,63 @@ server <- function(input, output, session) {
 		# temporary shapefile filepath
 		shp <- paste(tempdirname, shpdf$name[grep(pattern = '*.shp$', shpdf$name)], sep = '/')
 
-		# read in shapefile and reproject
-		sp <- read_sf(shp) %>%
-			st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
+		shp
+	})
 
-		return(sp)
+	output$inputFilesMessage <- renderText({
+		req(input$shapefile)
+		df <- input$shapefile
+		f.num <- nrow(df)
+		if (f.num == 1) {
+			f.str <- 'file'
+		} else {
+			f.str <- 'files'
+		}
+		if (check_input_files(df)) paste0(f.num, ' ', f.str, ' selected:\n', paste(as.character(df$name), collapse = '\n'))
+	})
+
+	output$inputFilesError <- renderText({
+		req(input$shapefile)
+		df <- input$shapefile
+		f.num <- nrow(df)
+		if (f.num == 1) {
+			f.str <- 'file'
+		} else {
+			f.str <- 'files'
+		}
+		m.num <- 4 - f.num
+		if (m.num == 1) {
+			m.str <- 'file'
+		} else {
+			m.str <- 'files'
+		}
+		if (m.num > 0) {
+			m.err <- paste0('\n\n', m.num, ' more ', m.str, ' needed...')
+		} else {
+			m.err <- ''
+		}
+		if (!check_input_files(df)) paste0(f.num, ' ', f.str, ' selected:\n', paste(as.character(df$name), collapse = '\n'), m.err)
+	})
+
+	output$shpTypeError <- renderText({
+		req(input$shapefile)
+		if (check_input_files(input$shapefile)) {
+			f <- shp()
+			shp.type <- check_shp_type(f)
+			if (!grepl('Polygon', shp.type)) paste('Error: This is a', shp.type, 'shapefile. Only a polygon shapefile is accepted.')
+		}
 	})
 
 	observeEvent(input$shapefile, {
 
-		if (nrow(input$shapefile) > 1) {
+		if (check_input_files(input$shapefile)) {
 
-			sp.user <- shp()
+			f <- shp()
+			sp.user <- read_sf(f) %>%
+				st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
+
 			bbox <- st_bbox(sp.user)
+
 			mapboxer_proxy('map') %>%
 				add_source(as_mapbox_source(sp.user), id = 'user_poly') %>%
 				add_line_layer(
@@ -1254,23 +1344,30 @@ server <- function(input, output, session) {
 	analyze.user.polygon <- reactive({
 
 		req(input$shapefile)
-		sp.user <- shp()
+		f <- shp()
+		sp.user <- read_sf(f) %>%
+			st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
 
 		# get current carbon layer as EE object
 		img.mgcha <- gee.src(pool = input$pool, period = input$period, climate = input$climate, constrain = input$constrain, returnEEobj = T)
 		img.mgc <- img.mgcha$multiply(21.46587)
 
 		# calculate carbon stock and avg density
-		df.avg <- ee_extract(x = img.mgcha, y = sp.user, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
-		df.sum <- ee_extract(x = img.mgc, y = sp.user, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
+		df.avg <- ee_extract(x = img.mgcha$rename('Mean_MgCha'), y = sp.user, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
+		df.sum <- ee_extract(x = img.mgc$rename('Total_MgC'), y = sp.user, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
 
-		df <- data.frame(Mean_MgCha = df.avg$AGB_UNR, Total_MgC = df.sum$AGB_UNR)
+		df <- data.frame(Mean_MgCha = df.avg$Mean_MgCha, Total_MgC = df.sum$Total_MgC)
 		return(df)
 
 	})
 
 	output$shapefileResults <- renderTable({
-		analyze.user.polygon()
+		req(input$shapefile)
+		if (check_input_files(input$shapefile)) {
+			f <- shp()
+			shp.type <- check_shp_type(f)
+			if (grepl('Polygon', shp.type)) analyze.user.polygon()
+		}
 	}, rownames = F, spacing = 'xs', striped = F, hover = F, bordered = F, digits = 1)
 
 }

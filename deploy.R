@@ -32,7 +32,7 @@ setAccountInfo(
 # 4. Run the application
 deployApp(
   appFiles = c('app.R', 'utils.R', '.Renviron', 'credentials', 'main.css', 'woodwell-fonts.css', 'fonts', 'www', 'shp'),
-  appTitle = 'pot-c-app',
+  appTitle = 'land-carbon-storage-app',
   forceUpdate = T,
   lint = F
 )
