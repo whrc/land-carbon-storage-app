@@ -3,7 +3,7 @@
 # -------------------------------------------------------------------------------
 
 # development (T) or deployment (F)?
-dev <- F
+dev <- T
 
 # print messages to console?
 verbose <- F
@@ -129,7 +129,7 @@ ui <- bootstrapPage(
 	),
 
 	tags$head(
-		tags$link(rel = 'icon', type = 'image/png', href = 'https://assets-woodwell.s3.us-east-2.amazonaws.com/wp-content/uploads/2020/08/19125343/Woodwell_Favicon.png'),
+		tags$link(rel = 'shortcut icon', href = 'favicon.ico'),
 		includeCSS('main.css'),
 		includeCSS('woodwell-fonts.css'),
 		tags$style(
