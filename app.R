@@ -110,7 +110,10 @@ logo.href.path <- ifelse(dev, '/', '/land-carbon-storage-app')
 
 globe.icon <- ph_i('globe', weight = 'bold', style = 'vertical-align: -0.26em;')
 flat.icon <- ph_i('map-trifold', weight = 'bold', style = 'vertical-align: -0.26em;')
-if (START.VIEW == 'globe') start.icon <- flat.icon else start.icon <- globe.icon
+if (START.VIEW == 'globe') { start.icon <- flat.icon } else { start.icon <- globe.icon }
+
+play.icon <- ph_i('play', weight = 'bold', style = 'vertical-align: -0.26em;')
+pause.icon <- ph_i('pause', weight = 'bold', style = 'vertical-align: -0.26em;')
 
 ui <- bootstrapPage(
 
@@ -257,6 +260,12 @@ ui <- bootstrapPage(
 				inputId = 'view',
 				label = NULL,
 				icon = start.icon,
+				class = 'customControl'
+			),
+			actionButton(
+				inputId = 'spin',
+				label = NULL,
+				icon = play.icon,
 				class = 'customControl'
 			),
 			div(id = 'navControl', style = 'padding: 0; outline: none; border: 0; box-shadow: none;')
@@ -909,6 +918,81 @@ server <- function(input, output, session) {
 						var data_json_string = JSON.stringify(data);
 						Shiny.setInputValue('drawn_poly', data_json_string);
 					}
+
+					// ------ spin globe ------
+					// source: https://docs.mapbox.com/mapbox-gl-js/example/globe-spin/
+
+					// At low zooms, complete a revolution every two minutes.
+					const secondsPerRevolution = 120;
+
+					// Above zoom level 5, do not rotate.
+					const maxSpinZoom = 5;
+
+					// Rotate at intermediate speeds between zoom levels 3 and 5.
+					const slowSpinZoom = 3;
+
+					let userInteracting = false;
+					let spinEnabled = false;
+
+					function spinGlobe() {
+						const zoom = map.getZoom();
+						if (spinEnabled && !userInteracting && zoom < maxSpinZoom) {
+							let distancePerSecond = 360 / secondsPerRevolution;
+							if (zoom > slowSpinZoom) {
+								// Slow spinning at higher zooms
+								const zoomDif = (maxSpinZoom - zoom) / (maxSpinZoom - slowSpinZoom);
+								distancePerSecond *= zoomDif;
+							}
+							const center = map.getCenter();
+							center.lng -= distancePerSecond;
+							// Smoothly animate the map over one second.
+							// When this animation is complete, it calls a 'moveend' event.
+							map.easeTo({ center, duration: 1000, easing: (n) => n });
+						}
+					}
+
+					// Pause spinning on interaction
+					map.on('mousedown', () => {
+						userInteracting = true;
+					});
+
+					// Restart spinning the globe when interaction is complete
+					map.on('mouseup', () => {
+						userInteracting = false;
+						spinGlobe();
+					});
+
+					// These events account for cases where the mouse has moved off the map, so 'mouseup' will not be fired.
+					map.on('dragend', () => {
+						userInteracting = false;
+						spinGlobe();
+					});
+					map.on('pitchend', () => {
+						userInteracting = false;
+						spinGlobe();
+					});
+					map.on('rotateend', () => {
+						userInteracting = false;
+						spinGlobe();
+					});
+
+					// When animation is complete, start spinning if there is no ongoing interaction
+					map.on('moveend', () => {
+						spinGlobe();
+					});
+
+					document.getElementById('spin').addEventListener('click', (e) => {
+					spinEnabled = !spinEnabled;
+						if (spinEnabled) {
+							spinGlobe();
+							// e.target.innerHTML = 'Pause rotation';
+						} else {
+							map.stop(); // Immediately end ongoing animation
+							// e.target.innerHTML = 'Start rotation';
+						}
+					});
+
+					spinGlobe();
 				}"
 			)
 
@@ -936,12 +1020,29 @@ server <- function(input, output, session) {
 		if (input$view %% 2 == 1) {
 			proj <- 'mercator'
 			updateActionButton(session, inputId = 'view', icon = globe.icon)
+			# disable(id = 'spin')
 		} else {
 			proj <- 'globe'
 			updateActionButton(session, inputId = 'view', icon = flat.icon)
+			# enable(id = 'spin')
 		}
 
 		session$sendCustomMessage('projection', proj)
+
+	}, ignoreInit = F, ignoreNULL = F)
+
+	# ---------------------------------------
+	# toggle spinning in globe view
+	# ---------------------------------------
+
+	# sends projection choice to javascript function defined in tags$head() on input change
+	observeEvent(input$spin, {
+
+		if (input$spin %% 2 == 1) {
+			updateActionButton(session, inputId = 'spin', icon = pause.icon)
+		} else {
+			updateActionButton(session, inputId = 'spin', icon = play.icon)
+		}
 
 	}, ignoreInit = F, ignoreNULL = F)
 
