@@ -22,10 +22,6 @@ html, body {
 	text-align: left!important;
 	max-width: 300px;
 }
-.legend {
-	background-color: #EFEEEE;
-	font-family: Ginto Normal;
-}
 
 /* removes labels on text slider input */
 .irs-single {
@@ -122,24 +118,29 @@ img.woodwellBig:hover {
 	outline: none;
 	box-shadow: none;
 }
-
 #appLogo {
-	background-color: #36363C;
 	height: 80px;
 	padding: 8px;
-}
-.appLogoText {
-	height: 80px;
-	width: 70px;
-	font-family: Sohne Schmal;
-	font-size: 18px;
-	letter-spacing: 1px;
-	line-height: 1.1;
-	color: #FF5700;
 	background-color: #36363C;
-	display: flex;
-	text-align: center;
-	align-items: center;
+}
+#betaContainer {
+	position: relative;
+	height: 6px;
+	width: 100%;
+	background-color: #4d4d4d;
+}
+#betaText {
+	height: 14px;
+	position: absolute;
+	bottom: 2px;
+	right: 0;
+	padding-right: 4px;
+	text-align: right;
+	color: #DCDAD2;
+	font-family: Gemeli Mono;
+	font-size: 14px;
+	font-style: italic;
+	z-index: 10;
 }
 #sidebarPanel {
 	background-color: #EFEEEE;
@@ -204,7 +205,19 @@ img.woodwellBig:hover {
 	color: red;
 	font-weight: bold;
 }
-
+#mapControls {
+	float: right;
+	padding: 4px;
+	border-radius: 4px;
+	background-color: #fff;
+	box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+}
+#scaleBox {
+	background-color: rgb(54 54 60 / 75%);
+	padding: 8px 10px 10px 10px;
+	box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+	border-radius: 4px;
+}
 
 /* Mapbox adjusements to match app style better
 a.mapboxgl-ctrl-logo {
@@ -233,29 +246,23 @@ a.mapboxgl-ctrl-logo:hover {
 	border-right: transparent;
 	border-left: transparent;
 	text-align: center;
+	float: right;
+	font-family: Ginto Normal;
+    font-size: 10px;
 }
 
-
-.mapboxgl-ctrl-bottom-right-adj {
-  bottom: 0;
-  right: 100px;
-  position: absolute;
+.mapboxgl-ctrl-scale .mapboxgl-ctrl-bottom-left {
+	bottom: 0;
+	right: 92px;
 }
 
 .mapboxgl-ctrl-bottom-left {
 	bottom: 0;
 	left: 92px;
 }
-
-/* legend control */
-.mapboxer-text-ctrl {
-	background-color: rgb(255 255 255 / 90%);
-}
-
-
 .mapboxgl-ctrl.mapboxgl-ctrl-attrib {
 	padding: 0 5px;
-	background-color: rgb(0 0 0 / 75%);
+	background-color: rgb(54 54 60 / 75%);
 	margin: 0;
 }
 .mapboxgl-ctrl-attrib {
@@ -285,8 +292,14 @@ a.mapboxgl-ctrl-logo:hover {
 	display: none;
 }
 
-
-/* LEGEND */
+/* legend */
+.mapboxer-text-ctrl {
+	font-family: Ginto Normal;
+	color: white;
+	background-color: rgb(54 54 60 / 75%);
+	padding: 10px 10px 0 10px;
+	box-shadow: 0 4px 8px 0 rgba(0, 0, 0, 0.2), 0 6px 20px 0 rgba(0, 0, 0, 0.19);
+}
 .legend-grid {
 	display: grid;
 	grid-template-rows: 1fr 1fr 1fr 1fr 1fr;
@@ -303,7 +316,6 @@ a.mapboxgl-ctrl-logo:hover {
 	grid-column-end: 2;
 	margin-top: 12px;
 	margin-bottom: 12px;
-	border: 1px solid black;
 }
 #item-1 {
 	grid-row-start: 1;

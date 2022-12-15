@@ -3,7 +3,7 @@
 # -------------------------------------------------------------------------------
 
 # development (T) or deployment (F)?
-dev <- T
+dev <- F
 
 # print messages to console?
 verbose <- F
@@ -141,6 +141,8 @@ ui <- bootstrapPage(
 				'#colorRamp {
 					width: 100%;
 					height: 100%;
+					border-radius: 4px;
+					border: 1px solid #292929;
 					background: ', pal.style, '
 				}')
 		),
@@ -202,8 +204,12 @@ ui <- bootstrapPage(
 		fixed = T,
 		draggable = F,
 
-		div(id = 'appLogo', a(img(src = 'app-logo.svg', width = '100%', height = '100%'), href = logo.href.path)), # using an image allows it to refresh app on click
+		div(id = 'appLogo', a(img(src = 'app-logo.svg', title = 'Home', width = '100%', height = '100%'), href = logo.href.path)),
+		div(id = 'betaContainer',
+			div(id = 'betaText', 'BETA')
+		),
 
+		# spacer
 		div(style = 'height: 15px; width: 100%;'),
 
 		actionButton(
@@ -211,7 +217,8 @@ ui <- bootstrapPage(
 			label = NULL,
 			icon = ph_i('stack', weight = 'thin', size = '2x'),
 			width = '100%',
-			class = 'sidebar'
+			class = 'sidebar',
+			title = 'Layer Options'
 		),
 
 		actionButton(
@@ -219,7 +226,8 @@ ui <- bootstrapPage(
 			label = NULL,
 			icon = ph_i('chart-bar-horizontal', weight = 'thin', size = '2x'),
 			width = '100%',
-			class = 'sidebar'
+			class = 'sidebar',
+			title = 'Analysis Options'
 		),
 
 		actionButton(
@@ -227,7 +235,8 @@ ui <- bootstrapPage(
 			label = NULL,
 			icon = ph_i('map-pin', weight = 'thin', size = '2x'),
 			width = '100%',
-			class = 'sidebar'
+			class = 'sidebar',
+			title = 'Search Locations'
 		),
 
 		actionButton(
@@ -235,7 +244,8 @@ ui <- bootstrapPage(
 			label = NULL,
 			icon = ph_i('info', weight = 'thin', size = '2x'),
 			width = '100%',
-			class = 'sidebar'
+			class = 'sidebar',
+			title = 'Information'
 		)
 
 	),
@@ -253,22 +263,35 @@ ui <- bootstrapPage(
 		mapboxerOutput(outputId = 'map', width = '100%', height = '100%'),
 
 		absolutePanel(
+			id = 'mapControls',
 			top = 10,
 			right = 10,
-			style = 'float: right; padding: 4px; border-radius: 4px; background-color: #fff;',
 			actionButton(
 				inputId = 'view',
 				label = NULL,
 				icon = start.icon,
-				class = 'customControl'
+				class = 'customControl',
+				title = 'Switch between 2D/3D view'
 			),
 			actionButton(
 				inputId = 'spin',
 				label = NULL,
 				icon = play.icon,
-				class = 'customControl'
+				class = 'customControl',
+				title = 'Play/pause rotation'
 			),
-			div(id = 'navControl', style = 'padding: 0; outline: none; border: 0; box-shadow: none;')
+			div(id = 'navControl')
+		),
+
+		absolutePanel(
+			id = 'scaleBox',
+			bottom = 30,
+			right = 90,
+			width = 'auto',
+			height = 'auto',
+			fixed = T,
+			draggable = F,
+			div(id = 'scaleControl')
 		),
 
 		absolutePanel(
@@ -278,7 +301,7 @@ ui <- bootstrapPage(
 			height = 'auto',
 			fixed = T,
 			draggable = F,
-			a(href = 'https://www.woodwellclimate.org/',  target = '_blank', img(src = 'woodwell-logo.png', class = 'woodwell', width = '80px', height = '34px'))
+			a(href = 'https://www.woodwellclimate.org/',  target = '_blank', img(src = 'woodwell-logo.png', class = 'woodwell', width = '80px', height = '34px', title = 'Woodwell Logo'))
 		),
 
 		conditionalPanel(
@@ -476,7 +499,7 @@ ui <- bootstrapPage(
 						bsCollapsePanel(
 							title = 'Upload Shapefile',
 							p('Upload a polygon shapefile to analyze the carbon within it\'s boundaries. Results will show below.', style = 'padding-bottom: 6px;'),
-							p('Note, when selecting a .shp file, be sure to select the related .dbf, .shx and .prj files (i.e., you must provide exactly 4 files).', style = 'font-style: italic; padding-bottom: 6px;'),
+							p('Note, when selecting a .shp file, you must also provide the related .dbf, .shx, and .prj files.', style = 'font-style: italic; padding-bottom: 6px;'),
 							fileInput(
 								inputId = 'shapefile',
 								label = NULL,
@@ -852,7 +875,7 @@ server <- function(input, output, session) {
 			add_text_control(
 				pos = 'bottom-right',
 				text = "
-					<strong>Mg C ha<sup>-1</sup></strong>
+					MgC/ha
 					<div class='legend-grid'>
 						<div id='item-0'><div id='colorRamp'></div></div>
 						<div id='item-1'>≥100</div>
@@ -860,29 +883,32 @@ server <- function(input, output, session) {
 						<div id='item-3'>50</div>
 						<div id='item-4'>25</div>
 						<div id='item-5'>0</div>
-					</div>"
+					</div>
+					"
 			) %>%
 			onRender(
 				"function(el, x) {
 
-					// get map object
+					// ------ map object ------
 					const map = mapboxer._widget[el.id].map;
 
-					// add controls
+					// ------ scale ------
 					const scale = new mapboxgl.ScaleControl({
 						maxWidth: 100,
 						unit: 'metric'
 					});
-					map.addControl(scale, 'bottom-left');
-					// scale._container.parentNode.className = 'mapboxgl-ctrl-bottom-right-adj';
+					// map.addControl(scale, 'bottom-right');
+					document.getElementById('scaleControl').appendChild(scale.onAdd(map));
 
+					// ------ zoom/compass ------
 					const nav = new mapboxgl.NavigationControl({
 						showZoom: true,
 						showCompass: true
 					});
 					document.getElementById('navControl').appendChild(nav.onAdd(map));
 
-					// geocoder options: https://github.com/mapbox/mapbox-gl-geocoder/blob/main/API.md
+					// ------ geocoder ------
+					// options: https://github.com/mapbox/mapbox-gl-geocoder/blob/main/API.md
 					const searchbox = new MapboxGeocoder({
 						accessToken: mapboxgl.accessToken,
 						mapboxgl: mapboxgl,
@@ -895,13 +921,13 @@ server <- function(input, output, session) {
 					})
 					document.getElementById('searchbox').appendChild(searchbox.onAdd(map));
 
-					// return map coordinates on mouse click
+					// ------ map coordinates ------
 					map.on('click', sendCoord2R);
 					function sendCoord2R(e) {
 						Shiny.setInputValue('map_coords_onclick', e.lngLat);
 					}
 
-					// add drawing controls and send polygons to R input$drawn_poly object as JSON string
+					// ------ draw control ------
 					const draw = new MapboxDraw({
 						displayControlsDefault: false,
 						controls: {
@@ -913,6 +939,7 @@ server <- function(input, output, session) {
 					map.on('draw.create', sendPoly2R);
 					map.on('draw.delete', sendPoly2R);
 					map.on('draw.update', sendPoly2R);
+					// send polygons to R input$drawn_poly object as JSON string
 					function sendPoly2R(e) {
 						const data = draw.getAll();
 						var data_json_string = JSON.stringify(data);
