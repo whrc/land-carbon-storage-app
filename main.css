@@ -141,6 +141,7 @@ img.woodwellBig:hover {
 	font-size: 14px;
 	font-style: italic;
 	z-index: 10;
+	cursor: help;
 }
 #sidebarPanel {
 	background-color: #EFEEEE;
@@ -193,17 +194,18 @@ img.woodwellBig:hover {
 #pixelInspector {
 	overflow: hidden;
 }
-
 #inputFilesMessage {
 	white-space: pre-wrap;
+	font-size: 11px;
 }
 #inputFilesError {
 	white-space: pre-wrap;
 	color: red;
+    font-size: 11px;
 }
 #shpTypeError {
 	color: red;
-	font-weight: bold;
+    font-size: 11px;
 }
 #mapControls {
 	float: right;

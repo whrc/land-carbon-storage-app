@@ -507,10 +507,24 @@ ui <- bootstrapPage(
 								width = '100%',
 								accept = c('.shp', '.shx', '.dbf', '.prj')
 							),
+							div(style = 'margin-top: -20px'),
 							textOutput(outputId = 'inputFilesMessage'),
 							textOutput(outputId = 'inputFilesError'),
-							br(),
 							textOutput(outputId = 'shpTypeError'),
+							# div(style = 'display: flex;',
+								actionButton(
+									inputId = 'runShpPoly',
+									label = NULL,
+									icon = ph_i('calculator', weight = 'thin', size = '3x'),
+									class = 'calcButton'
+								),
+							# 	actionButton(
+							# 		inputId = 'resetShpInput',
+							# 		label = NULL,
+							# 		icon = ph_i('arrow-counter-clockwise', weight = 'thin', size = '3x'),
+							# 		class = 'calcButton'
+							# 	)
+							# ),
 							tableOutput(outputId = 'shapefileResults')
 						)
 					)
@@ -616,6 +630,13 @@ ui <- bootstrapPage(
 		trigger = 'hover',
 		options = list(container = 'body', delay = list(show = 0, hide = 0))
 	),
+	bsTooltip(
+		id = 'betaText',
+		title = 'This website is under active development.',
+		placement = 'bottom',
+		trigger = 'hover',
+		options = list(container = 'body', delay = list(show = 0, hide = 0))
+	),
 
 	# title for web browser tab
 	title = 'Land Carbon Storage App'
@@ -716,11 +737,12 @@ check_input_files <- function(shpdf) {
 }
 
 # define function to get feature type of shapefile without reading shapefile into memory
-check_shp_type <- function(shp) {
+check_shp_poly <- function(shp) {
 	wkb.opts <- c('wkbPoint', 'wkbLineString', 'wkbPolygon', 'wkbMultiPoint', 'wkbMultiLineString', 'wkbMultiPolygon', 'wkbGeometryCollection')
 	shp.info <- rgdal::ogrInfo(shp)
 	shp.wkb <- wkb.opts[shp.info$eType]
-	return(gsub('wkb', '', shp.wkb))
+	shp.type <- gsub('wkb', '', shp.wkb)
+	return(grepl('Polygon', shp.type))
 }
 
 server <- function(input, output, session) {
@@ -729,7 +751,7 @@ server <- function(input, output, session) {
 	# sidebar selection
 	# ---------------------------------------
 
-	rv <- reactiveValues(cur_sel = 'none', old_sel = 'none', show = 'none', cnt = -1, crbn_lyr_cnt = 0)
+	rv <- reactiveValues(cur_sel = 'none', old_sel = 'none', show = 'none', cnt = -1, crbn_lyr_cnt = 0, shp_lyr_cnt = 0, clear_shp_tbl = T)
 
 	observeEvent(input$lyr_btn, {
 		rv$old_sel <- rv$cur_sel
@@ -1435,8 +1457,7 @@ server <- function(input, output, session) {
 		req(input$shapefile)
 		if (check_input_files(input$shapefile)) {
 			f <- shp()
-			shp.type <- check_shp_type(f)
-			if (!grepl('Polygon', shp.type)) paste('Error: This is a', shp.type, 'shapefile. Only a polygon shapefile is accepted.')
+			if (!check_shp_poly(f)) paste('Error: Only a polygon shapefile is accepted.')
 		}
 	})
 
@@ -1445,56 +1466,90 @@ server <- function(input, output, session) {
 		if (check_input_files(input$shapefile)) {
 
 			f <- shp()
-			sp.user <- read_sf(f) %>%
-				st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
+			sp.user <- read_sf(f) %>% st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
 
+			# fly map to polygon bounds
 			bbox <- st_bbox(sp.user)
-
 			mapboxer_proxy('map') %>%
-				add_source(as_mapbox_source(sp.user), id = 'user_poly') %>%
-				add_line_layer(
-					source = 'user_poly',
-					id = 'user_poly',
-					line_color = 'white',
-					line_opacity = 0.8,
-					line_width = 3,
-					visibility = T
-				) %>%
 				fit_bounds(bbox, padding = 40, offset = c(80, 0)) %>%
 				update_mapboxer()
 
-			session$sendCustomMessage('moveLayerToTop', 'user_poly')
+			# on first user shp upload create mapboxer source
+			if (rv$shp_lyr_cnt == 0) {
+				mapboxer_proxy('map') %>%
+					add_source(as_mapbox_source(sp.user), id = 'user_poly_src') %>%
+					add_line_layer(
+						source = 'user_poly_src',
+						id = 'user_poly_lyr',
+						line_color = 'white',
+						line_opacity = 0.8,
+						line_width = 3,
+						visibility = T
+					) %>%
+					update_mapboxer()
+
+			# after first upload, just update source to new polygon
+			} else {
+
+				mapboxer_proxy('map') %>%
+					set_data(sp.user, source_id = 'user_poly_src') %>%
+					update_mapboxer()
+
+			}
+
+			session$sendCustomMessage('moveLayerToTop', 'user_poly_lyr')
+			rv$shp_lyr_cnt <- rv$shp_lyr_cnt + 1
 
 		}
 
 	})
 
-	analyze.user.polygon <- reactive({
-
-		req(input$shapefile)
-		f <- shp()
-		sp.user <- read_sf(f) %>%
-			st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
-
-		# get current carbon layer as EE object
-		img.mgcha <- gee.src(pool = input$pool, period = input$period, climate = input$climate, constrain = input$constrain, returnEEobj = T)
-		img.mgc <- img.mgcha$multiply(21.46587)
-
-		# calculate carbon stock and avg density
-		df.avg <- ee_extract(x = img.mgcha$rename('Mean_MgCha'), y = sp.user, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
-		df.sum <- ee_extract(x = img.mgc$rename('Total_MgC'), y = sp.user, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
-
-		df <- data.frame(Mean_MgCha = df.avg$Mean_MgCha, Total_MgC = df.sum$Total_MgC)
-		return(df)
-
-	})
-
-	output$shapefileResults <- renderTable({
+	analyze.user.polygon <- eventReactive(input$runShpPoly, {
 		req(input$shapefile)
 		if (check_input_files(input$shapefile)) {
 			f <- shp()
-			shp.type <- check_shp_type(f)
-			if (grepl('Polygon', shp.type)) analyze.user.polygon()
+			if (check_shp_poly(f)) {
+
+
+				# load shp if it passes all checks
+				sp.user <- read_sf(f) %>%
+					st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
+
+				# get current carbon layer as EE object
+				img.mgcha <- gee.src(pool = input$pool, period = input$period, climate = input$climate, constrain = input$constrain, returnEEobj = T)
+				img.mgc <- img.mgcha$multiply(21.46587)
+
+				# calculate carbon stock and avg density
+				df.avg <- ee_extract(x = img.mgcha$rename('Mean_MgCha'), y = sp.user, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
+				df.sum <- ee_extract(x = img.mgc$rename('Total_MgC'), y = sp.user, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
+
+				df <- data.frame(Mean_MgCha = df.avg$Mean_MgCha, Total_MgC = df.sum$Total_MgC)
+				return(df)
+			}
+		}
+	})
+
+	observeEvent(input$shapefile, {
+		rv$clear_shp_tbl <- T
+	})
+
+	# observeEvent(input$resetShpInput, {
+	# 	rv$clear_shp_tbl <- T
+	# 	reset('shapefile')
+	# 	mapboxer_proxy('map') %>%
+	# 		set_layout_property(layer_id = 'user_poly_lyr', property = 'visibility', value = 'none') %>%
+	# 		update_mapboxer()
+	# })
+
+	observeEvent(input$runShpPoly, {
+		rv$clear_shp_tbl <- F
+	})
+
+	output$shapefileResults <- renderTable({
+		if (rv$clear_shp_tbl) {
+			return()
+		} else {
+			analyze.user.polygon()
 		}
 	}, rownames = F, spacing = 'xs', striped = F, hover = F, bordered = F, digits = 1)
 
