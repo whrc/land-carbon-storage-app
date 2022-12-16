@@ -20,6 +20,7 @@ library(shinybusy)
 library(shinyBS)
 library(phosphoricons)
 library(htmlwidgets)
+library(DT)
 source('utils.R')
 
 # mapping/analysis
@@ -475,7 +476,7 @@ ui <- bootstrapPage(
 						bsCollapsePanel(
 							title = 'Inspect Pixel',
 							p('Click a pixel on the map to return it\'s value below.', style = 'padding-bottom: 6px;'),
-							tableOutput(outputId = 'pixelInspector')
+							dataTableOutput(outputId = 'pixelInspector')
 						),
 						bsCollapsePanel(
 							title = 'Draw Shape',
@@ -485,7 +486,7 @@ ui <- bootstrapPage(
 							p('4. Double-click to add your last vertex, and the polygon will be created.'),
 							p('5. To analyze the carbon within your polygon, click the calculator icon.'),
 							p('6. To delete the polygon, select it and then click the trash icon.', style = 'padding-bottom: 6px;'),
-							div(style = 'display: flex;',
+							div(style = 'display: flex; width: 230px;',
 								div(id = 'draw', class = 'drawControls'),
 								actionButton(
 									inputId = 'runDrawnPoly',
@@ -494,7 +495,7 @@ ui <- bootstrapPage(
 									class = 'calcButton'
 								)
 							),
-							tableOutput(outputId = 'drawnPolyResults')
+							dataTableOutput(outputId = 'drawnPolyResults')
 						),
 						bsCollapsePanel(
 							title = 'Upload Shapefile',
@@ -525,7 +526,7 @@ ui <- bootstrapPage(
 							# 		class = 'calcButton'
 							# 	)
 							# ),
-							tableOutput(outputId = 'shapefileResults')
+							dataTableOutput(outputId = 'shapefileResults')
 						)
 					)
 				)
@@ -958,10 +959,33 @@ server <- function(input, output, session) {
 						}
 					});
 					document.getElementById('draw').appendChild(draw.onAdd(map));
-					map.on('draw.create', sendPoly2R);
+
+					// add polygon ID on creation
+					let count = 1;
+					map.on('draw.create', addPID);
+					function addPID(e) {
+						if (e.features && e.features.length === 1) {
+							draw.setFeatureProperty(e.features[0].id, 'PID', count);
+							count++;
+						}
+						sendPoly2R(e);
+					}
+
+					// send polygon ID to popup on user click
+					map.on('click', 'gl-draw-polygon-fill-inactive.cold', drawnPolyPopup);
+					function drawnPolyPopup(e) {
+						const data = draw.getSelected();
+						const out_str = data.features[0].properties.PID;
+						new mapboxgl.Popup()
+							.setLngLat(e.lngLat)
+							.setText(out_str)
+							.addTo(map);
+					}
+
+					// send polygons to R input$drawn_poly object as JSON string
+					// map.on('draw.create', sendPoly2R);
 					map.on('draw.delete', sendPoly2R);
 					map.on('draw.update', sendPoly2R);
-					// send polygons to R input$drawn_poly object as JSON string
 					function sendPoly2R(e) {
 						const data = draw.getAll();
 						var data_json_string = JSON.stringify(data);
@@ -1344,19 +1368,37 @@ server <- function(input, output, session) {
 			img.mgcha <- gee.src(pool = input$pool, period = input$period, climate = input$climate, constrain = input$constrain, returnEEobj = T)
 
 			# extract carbon density at location
-			df.pnt.mgcha <- ee_extract(x = img.mgcha, y = sf.pnt, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
+			df <- ee_extract(x = img.mgcha$rename('MgCha'), y = sf.pnt, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
 
-			# format output table
-			pnt.mgcha <- ifelse(nrow(df.pnt.mgcha) > 0, as.numeric(df.pnt.mgcha), 0)
-			rv$df_pixel <- data.frame(Long = round(mouse.lng, digits = 5), Lat = round(mouse.lat, digits = 5), MgCha = pnt.mgcha)
+			# get carbon density value, but convert empty returns to zero
+			cdv <- ifelse(dim(df)[2] > 0, as.numeric(df), 0)
+
+			rv$df_pixel <- data.frame(
+				Long = round(mouse.lng, digits = 5),
+				Lat = round(mouse.lat, digits = 5),
+				MgCha = cdv
+			)
 
 		}
 
 	})
 
-	output$pixelInspector <- renderTable({
-		rv$df_pixel
-	}, rownames = F, spacing = 'xs', striped = F, hover = F, bordered = F)
+	output$pixelInspector <- renderDataTable({
+		datatable(
+			rv$df_pixel,
+			colnames = c('Long','Lat','MgC/ha'),
+			rownames = F,
+			filter = 'none',
+			selection = 'none',
+			class = 'compact',
+			width = 250,
+			options = list(
+				dom = 't',
+				ordering = F
+			)
+		)
+
+	})
 
 
 	# ---------------------------------------
@@ -1367,31 +1409,52 @@ server <- function(input, output, session) {
 
 		if (!is.null(input$drawn_poly)) {
 
+			# get polygon(s)
 			json.str <- input$drawn_poly
 			sp.poly <- geojson_sf(json.str)
-
-			message(input$pool)
-			message(input$period)
-			message(input$climate)
-			message(input$constrain)
 
 			# get current carbon layer as EE object
 			img.mgcha <- gee.src(pool = input$pool, period = input$period, climate = input$climate, constrain = input$constrain, returnEEobj = T)
 			img.mgc <- img.mgcha$multiply(21.46587)
 
 			# calculate carbon stock and avg density
-			df.avg <- ee_extract(x = img.mgcha$rename('Mean_MgCha'), y = sp.poly, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
-			df.sum <- ee_extract(x = img.mgc$rename('Total_MgC'), y = sp.poly, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
+			sp.tmp <- ee_extract(x = img.mgcha$rename('Mean_MgCha'), y = sp.poly, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = T)
+			df.tmp <- ee_extract(x = img.mgc$rename('Total_MgC'), y = sp.tmp, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
 
-			df <- data.frame(Mean_MgCha = df.avg$Mean_MgCha, Total_MgC = df.sum$Total_MgC)
-			return(df)
+			if (!('Mean_MgCha' %in% colnames(df.tmp))) {
+				df.tmp$Mean_MgCha <- 0
+			}
+
+			if (!('Total_MgC' %in% colnames(df.tmp))) {
+				df.tmp$Total_MgC <- 0
+			}
+
+			df <- df.tmp %>%
+				select(PID, Mean_MgCha, Total_MgC) %>%
+				mutate(Mean_MgCha = round(Mean_MgCha, digits = 1),
+					   Total_MgC = round(Total_MgC, digits = 2))
+
+			datatable(
+				df,
+				colnames = c('','Mean MgC/ha','Total MgC'),
+				rownames = F,
+				filter = 'none',
+				selection = 'none',
+				class = 'compact',
+				width = 250,
+				options = list(
+					dom = 't',
+					ordering = F
+				)
+			) %>%
+			formatCurrency(columns = 2:3, currency = '')
 
 		}
 	})
 
-	output$drawnPolyResults <- renderTable({
+	output$drawnPolyResults <- renderDataTable({
 		analyze.drawn.polygon()
-	}, rownames = F, spacing = 'xs', striped = F, hover = F, bordered = F, digits = 1)
+	})
 
 
 	# ---------------------------------------
@@ -1466,7 +1529,9 @@ server <- function(input, output, session) {
 		if (check_input_files(input$shapefile)) {
 
 			f <- shp()
-			sp.user <- read_sf(f) %>% st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
+			sp.user <- read_sf(f) %>%
+				st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs') %>%
+				mutate(PID = row_number())
 
 			# fly map to polygon bounds
 			bbox <- st_bbox(sp.user)
@@ -1478,13 +1543,23 @@ server <- function(input, output, session) {
 			if (rv$shp_lyr_cnt == 0) {
 				mapboxer_proxy('map') %>%
 					add_source(as_mapbox_source(sp.user), id = 'user_poly_src') %>%
+					# add transparent fill layer to allow for popup when user clicks inside polygon
+					add_fill_layer(
+						source = 'user_poly_src',
+						id = 'user_poly_fill_lyr',
+						fill_opacity = 0,
+						visibility = T,
+						popup = '{{PID}}'
+					) %>%
+					# add visible polygon outline layer, also allow user to click line for popup
 					add_line_layer(
 						source = 'user_poly_src',
-						id = 'user_poly_lyr',
+						id = 'user_poly_line_lyr',
 						line_color = 'white',
 						line_opacity = 0.8,
 						line_width = 3,
-						visibility = T
+						visibility = T,
+						popup = '{{PID}}'
 					) %>%
 					update_mapboxer()
 
@@ -1497,7 +1572,8 @@ server <- function(input, output, session) {
 
 			}
 
-			session$sendCustomMessage('moveLayerToTop', 'user_poly_lyr')
+			session$sendCustomMessage('moveLayerToTop', 'user_poly_fill_lyr')
+			session$sendCustomMessage('moveLayerToTop', 'user_poly_line_lyr')
 			rv$shp_lyr_cnt <- rv$shp_lyr_cnt + 1
 
 		}
@@ -1510,21 +1586,47 @@ server <- function(input, output, session) {
 			f <- shp()
 			if (check_shp_poly(f)) {
 
-
 				# load shp if it passes all checks
 				sp.user <- read_sf(f) %>%
-					st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs')
+					st_transform('+proj=longlat +ellps=WGS84 +datum=WGS84 +no_defs') %>%
+					mutate(PID = row_number())
 
 				# get current carbon layer as EE object
 				img.mgcha <- gee.src(pool = input$pool, period = input$period, climate = input$climate, constrain = input$constrain, returnEEobj = T)
 				img.mgc <- img.mgcha$multiply(21.46587)
 
 				# calculate carbon stock and avg density
-				df.avg <- ee_extract(x = img.mgcha$rename('Mean_MgCha'), y = sp.user, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = F)
-				df.sum <- ee_extract(x = img.mgc$rename('Total_MgC'), y = sp.user, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
+				sp.tmp <- ee_extract(x = img.mgcha$rename('Mean_MgCha'), y = sp.user, scale = 500, fun = ee$Reducer$mean(), via = 'getInfo', sf = T)
+				df.tmp <- ee_extract(x = img.mgc$rename('Total_MgC'), y = sp.tmp, scale = 500, fun = ee$Reducer$sum(), via = 'getInfo', sf = F)
 
-				df <- data.frame(Mean_MgCha = df.avg$Mean_MgCha, Total_MgC = df.sum$Total_MgC)
-				return(df)
+				if (!('Mean_MgCha' %in% colnames(df.tmp))) {
+					df.tmp$Mean_MgCha <- 0
+				}
+
+				if (!('Total_MgC' %in% colnames(df.tmp))) {
+					df.tmp$Total_MgC <- 0
+				}
+
+				df <- df.tmp %>%
+					select(PID, Mean_MgCha, Total_MgC) %>%
+					mutate(Mean_MgCha = round(Mean_MgCha, digits = 1),
+						   Total_MgC = round(Total_MgC, digits = 2))
+
+				datatable(
+					df,
+					colnames = c('','Mean MgC/ha','Total MgC'),
+					rownames = F,
+					filter = 'none',
+					selection = 'none',
+					class = 'compact',
+					width = 250,
+					options = list(
+						dom = 't',
+						ordering = F
+					)
+				) %>%
+				formatCurrency(columns = 2:3, currency = '')
+
 			}
 		}
 	})
@@ -1545,13 +1647,13 @@ server <- function(input, output, session) {
 		rv$clear_shp_tbl <- F
 	})
 
-	output$shapefileResults <- renderTable({
+	output$shapefileResults <- renderDataTable({
 		if (rv$clear_shp_tbl) {
 			return()
 		} else {
 			analyze.user.polygon()
 		}
-	}, rownames = F, spacing = 'xs', striped = F, hover = F, bordered = F, digits = 1)
+	})
 
 }
 
