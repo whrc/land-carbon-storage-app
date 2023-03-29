@@ -84,6 +84,7 @@ if (!dev) {
 # -------------------------------------------------------------------------------
 
 START.VIEW <- 'GLOBE'
+START.FULL <- 'no'
 START.PERIOD <- 'CUR'
 START.POOL <- c('AGB', 'BGB', 'SOC')
 START.CLIMATE <- 'Base_Clim'
@@ -109,12 +110,16 @@ sp.bioclim <- read_sf('shp/gez_2010_wgs84_dissolved_small.shp') %>%
 
 logo.href.path <- ifelse(dev, '/', '/land-carbon-storage-app')
 
-globe.icon <- ph_i('globe', weight = 'bold', style = 'vertical-align: -0.26em;')
-flat.icon <- ph_i('map-trifold', weight = 'bold', style = 'vertical-align: -0.26em;')
-if (START.VIEW == 'globe') { start.icon <- flat.icon } else { start.icon <- globe.icon }
+globe.icon <- ph_i('globe', weight = 'regular', color = 'white', style = 'vertical-align: -0.26em;')
+flat.icon <- ph_i('map-trifold', weight = 'regular', color = 'white', style = 'vertical-align: -0.26em;')
+if (START.VIEW == 'globe') { start.view.icon <- flat.icon } else { start.view.icon <- globe.icon }
 
-play.icon <- ph_i('play', weight = 'bold', style = 'vertical-align: -0.26em;')
-pause.icon <- ph_i('pause', weight = 'bold', style = 'vertical-align: -0.26em;')
+open.icon <- ph_i('corners-out', weight = 'regular', color = 'white', style = 'vertical-align: -0.26em;')
+close.icon <- ph_i('corners-in', weight = 'regular', color = 'white', style = 'vertical-align: -0.26em;')
+if (START.FULL == 'no') { start.full.icon <- open.icon } else { start.full.icon <- close.icon }
+
+play.icon <- ph_i('play', weight = 'regular', color = 'white', style = 'vertical-align: -0.26em;')
+pause.icon <- ph_i('pause', weight = 'regular', color = 'white', style = 'vertical-align: -0.26em;')
 
 ui <- bootstrapPage(
 
@@ -268,22 +273,39 @@ ui <- bootstrapPage(
 			top = 10,
 			right = 10,
 			actionButton(
+				inputId = 'fullscreen',
+				label = NULL,
+				icon = start.full.icon,
+				class = 'customControl',
+				title = 'Open/close fullscreen',
+				style = 'background-color: transparent;'
+			),
+			actionButton(
+				inputId = 'home',
+				label = NULL,
+				icon = ph_i('house', weight = 'regular', color = 'white', style = 'vertical-align: -0.26em;'),
+				class = 'customControl',
+				title = 'Return to starting view',
+				style = 'background-color: transparent;'
+			),
+			actionButton(
 				inputId = 'view',
 				label = NULL,
-				icon = start.icon,
+				icon = start.view.icon,
 				class = 'customControl',
-				title = 'Switch between 2D/3D view'
+				title = 'Switch between 2D/3D view',
+				style = 'background-color: transparent;'
 			),
 			actionButton(
 				inputId = 'spin',
 				label = NULL,
 				icon = play.icon,
 				class = 'customControl',
-				title = 'Play/pause rotation'
+				title = 'Play/pause rotation',
+				style = 'background-color: transparent;'
 			),
 			div(id = 'navControl')
 		),
-
 		absolutePanel(
 			id = 'scaleBox',
 			bottom = 30,
@@ -930,6 +952,56 @@ server <- function(input, output, session) {
 					});
 					document.getElementById('navControl').appendChild(nav.onAdd(map));
 
+					// ------ home ------
+					document.getElementById('home').addEventListener('click', (e) => {
+						map.flyTo({
+							center: [-10, 10],
+							zoom: 2.0,
+							essential: true // this animation is considered essential with respect to prefers-reduced-motion
+						});
+					});
+
+					// ------ fullscreen ------
+					// Source: https://www.w3schools.com/howto/howto_js_fullscreen.asp
+
+					// Get the documentElement (<html>) to display the page in fullscreen
+					var elem = document.documentElement;
+
+					// Set default
+					let fullscreenEnabled = false;
+
+					// View in fullscreen
+					function openFullscreen() {
+					  if (elem.requestFullscreen) {
+					    elem.requestFullscreen();
+					  } else if (elem.webkitRequestFullscreen) { /* Safari */
+					    elem.webkitRequestFullscreen();
+					  } else if (elem.msRequestFullscreen) { /* IE11 */
+					    elem.msRequestFullscreen();
+					  }
+					}
+
+					// Close fullscreen
+					function closeFullscreen() {
+					  if (document.exitFullscreen) {
+					    document.exitFullscreen();
+					  } else if (document.webkitExitFullscreen) { /* Safari */
+					    document.webkitExitFullscreen();
+					  } else if (document.msExitFullscreen) { /* IE11 */
+					    document.msExitFullscreen();
+					  }
+					}
+
+					// Call functions
+					document.getElementById('fullscreen').addEventListener('click', (e) => {
+						fullscreenEnabled = !fullscreenEnabled;
+						if (fullscreenEnabled) {
+							openFullscreen();
+						} else {
+							closeFullscreen();
+						}
+					});
+
 					// ------ geocoder ------
 					// options: https://github.com/mapbox/mapbox-gl-geocoder/blob/main/API.md
 					const searchbox = new MapboxGeocoder({
@@ -1082,6 +1154,21 @@ server <- function(input, output, session) {
 			update_mapboxer()
 
 	})
+
+	# ---------------------------------------
+	# toggle fullscreen
+	# ---------------------------------------
+
+	# sends projection choice to javascript function defined in tags$head() on input change
+	observeEvent(input$fullscreen, {
+
+		if (input$fullscreen %% 2 == 1) {
+			updateActionButton(session, inputId = 'fullscreen', icon = close.icon)
+		} else {
+			updateActionButton(session, inputId = 'fullscreen', icon = open.icon)
+		}
+
+	}, ignoreInit = F, ignoreNULL = F)
 
 	# ---------------------------------------
 	# toggle map view (globe vs. flat)
