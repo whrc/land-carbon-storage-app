@@ -3,7 +3,7 @@
 # -------------------------------------------------------------------------------
 
 # development (T) or deployment (F)?
-dev <- F
+dev <- T
 
 # print messages to console?
 verbose <- F
@@ -21,7 +21,6 @@ library(shinyBS)
 library(phosphoricons)
 library(htmlwidgets)
 library(DT)
-source('utils.R')
 
 # mapping/analysis
 library(rgee)
@@ -33,17 +32,23 @@ library(geojson) # not sure if this is needed anymore...
 library(geojsonio) # needed for ee_extract()
 library(geojsonsf) # needed to convert mapbox javascript return to sf object
 
+# additional functions
+source('utils.R')
+
 ### see https://github.com/crazycapivara/mapboxer/pull/104 ###
 # devtools::install_github(repo = 'walkerke/mapboxer', ref = 'gljs-v2')
 library(mapboxer)
 mapboxer_use_v2(T)
 
 # -------------------------------------------------------------------------------
-# 3. Set rgee
+# 3. Setup rgee
 # -------------------------------------------------------------------------------
 
 if (dev) {
-	ee_Initialize()
+	Sys.setenv("RETICULATE_PYTHON" = "/Users/sgorelik/miniforge3/envs/rgee/bin/python")
+	Sys.setenv("EARTHENGINE_GCLOUD" = "/Users/sgorelik/local/google-cloud-sdk/bin/gcloud")
+	# ee_Authenticate()
+	ee_Initialize(project = "woodwell-biomass")
 } else {
 	if (!reticulate::virtualenv_exists('rgee_py')) {
 		set_rgee_dependencies()
@@ -56,7 +61,9 @@ if (dev) {
 
 tryCatch(
 	expr = ee$Image(0),
-	error = function(e) { ee_Initialize() }
+	error = function(e) {
+		ee_Initialize(project = "woodwell-biomass")
+	}
 )
 
 # -------------------------------------------------------------------------------
@@ -385,7 +392,7 @@ ui <- bootstrapPage(
 
 					p('Options', class = 'inputHeading'),
 					div(style = 'display: flex; align-items: end; margin-bottom: 4px;',
-						setSliderColor(color = '#69bd54', sliderId = 1),
+						# setSliderColor(color = '#69bd54', sliderId = 1),
 						tagAppendAttributes(
 							sliderTextInput(
 								inputId = 'transparency',
