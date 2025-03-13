@@ -1,40 +1,26 @@
-set_rgee_dependencies <- function() {
+setup_rgee <- function() {
 
-	# 1. Create a Python virtual env
-	reticulate::virtualenv_create(
-		envname = 'rgee_py',
-		python = '/usr/bin/python3'
+	library(reticulate)
+	use_condaenv(condaenv = 'rgee_py', conda = '/opt/conda/bin/conda', required = T)
+
+	py.code <- glue::glue(
+		"
+		import ee
+		service_account = 'rshiny-cloud-run@woodwell-biomass.iam.gserviceaccount.com'
+		key = '/opt/.config/gcloud/application_default_credentials.json'
+		credentials = ee.ServiceAccountCredentials(service_account, key)
+		ee.Initialize(credentials)
+		print(ee.String('Hello from the Earth Engine servers!').getInfo())
+		"
 	)
 
-	# 2. Install rgee and rgeeExtra Python dependencies
-	reticulate::virtualenv_install(
-		envname = 'rgee_py',
-		packages = c('numpy', 'earthengine-api', 'jsbeautifier', 'regex')
-	)
+	py_run_string(py.code)
 
-	# 3. Set a Python Env to use with R
-	reticulate::use_virtualenv('rgee_py', required = T)
-	system(
-		sprintf(
-			"echo $'EARTHENGINE_INIT_MESSAGE=\"TRUE\"\nEARTHENGINE_PYTHON=%s' > $HOME/.Renviron",
-			path.expand('~/.virtualenvs/rgee_py/bin/python')
-		)
-	)
-
-	# 4. Copy credentials file to the project folder
-	oauth_func_path <- system.file('python/ee_utils.py', package = 'rgee')
-	utils_py <- rgee:::ee_source_python(oauth_func_path)
-	ee_path <- sprintf('%s/ndef', ee_utils_py_to_r(utils_py$ee_path()))
-	dir.create(ee_path, showWarnings = F, recursive = T)
-	file.copy(from = 'credentials', to = ee_path, overwrite = T)
-
-	# 5. Initialize Earth Engine
-	ee_Initialize(project = "woodwell-biomass")
-
+	# test
+	ee$String('Hello from the Earth Engine servers!')$getInfo()
 
 }
 
-#
 # see https://github.com/r-spatial/rgee/issues/367
 ee_extract <- function (x, y, fun = ee$Reducer$mean(), scale = NULL, sf = FALSE,
 						via = "getInfo", container = "rgee_backup", lazy = FALSE,

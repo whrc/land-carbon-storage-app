@@ -39,7 +39,7 @@ vignettes/*.pdf
 .Renviron
 
 # Earth Engine credentials
-credentials
+gcloud-key.json
 
 rsconnect/
 scratch/

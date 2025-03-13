@@ -3,10 +3,10 @@
 # -------------------------------------------------------------------------------
 
 # development (T) or deployment (F)?
-dev <- T
+dev <- F
 
 # print messages to console?
-verbose <- F
+verbose <- T
 
 # -------------------------------------------------------------------------------
 # 2. Libraries
@@ -45,26 +45,46 @@ mapboxer_use_v2(T)
 # -------------------------------------------------------------------------------
 
 if (dev) {
-	Sys.setenv("RETICULATE_PYTHON" = "/Users/sgorelik/miniforge3/envs/rgee/bin/python")
-	Sys.setenv("EARTHENGINE_GCLOUD" = "/Users/sgorelik/local/google-cloud-sdk/bin/gcloud")
+	HOME <- Sys.getenv("HOME")
+	Sys.setenv("RETICULATE_PYTHON" = sprintf("%s/miniforge3/envs/rgee/bin/python", HOME))
+	Sys.setenv("EARTHENGINE_GCLOUD" = sprintf("%s/local/google-cloud-sdk/bin/gcloud", HOME))
 	# ee_Authenticate()
 	ee_Initialize(project = "woodwell-biomass")
 } else {
-	if (!reticulate::virtualenv_exists('rgee_py')) {
-		set_rgee_dependencies()
-	}
+	setup_rgee()
+	# if (!reticulate::virtualenv_exists('rgee_py')) {
+	# 	setup_rgee()
+	# }
 }
 
 # -------------------------------------------------------------------------------
 # 4. Run ee_Initialize() again after a long period of inactivity
 # -------------------------------------------------------------------------------
 
+# tryCatch(
+# 	expr = ee$Image(0),
+# 	error = function(e) {
+# 		ee_Initialize(project = "woodwell-biomass")
+# 	}
+# )
+
 tryCatch(
 	expr = ee$Image(0),
 	error = function(e) {
-		ee_Initialize(project = "woodwell-biomass")
+		py.code <- glue::glue(
+			"
+			import ee
+			service_account = 'rshiny-cloud-run@woodwell-biomass.iam.gserviceaccount.com'
+			key = '/opt/.config/gcloud/application_default_credentials.json'
+			credentials = ee.ServiceAccountCredentials(service_account, key)
+			ee.Initialize(credentials)
+			print(ee.String('Hello from the Earth Engine servers!').getInfo())
+			"
+		)
+		reticulate::py_run_string(py.code)
 	}
 )
+
 
 # -------------------------------------------------------------------------------
 # 5. Get API Keys and Access Tokens
