@@ -41,7 +41,6 @@ vignettes/*.pdf
 # Earth Engine credentials
 gcloud-key.json
 
-rsconnect/
 scratch/
 
-.DS_Store
+**/.DS_Store
