@@ -1,12 +1,12 @@
 # Land Carbon Storage App
 
-An interactive data visualization, analysis, and sharing application built using Shiny, Mapbox, and Google Earth Engine. Written primarily in R, but also utilizes JavaScript, HTML, CSS, and some shell.
+An interactive data visualization, analysis, and sharing application built using Shiny, Mapbox, and Google Earth Engine. Hosted on Google Cloud Run.
 
-Built to highlight the Walker et al. 2022 global potential carbon data set.
+Built to highlight the [Walker et al. 2022](https://www.pnas.org/doi/full/10.1073/pnas.2111312119) global potential carbon [dataset](https://dataverse.harvard.edu/dataset.xhtml?persistentId=doi:10.7910/DVN/DSDDQK).
 
-~~To deploy, make sure `dev = F` in [app.R](app.R), then source [deploy.R](deploy.R).~~
+To build Docker image, make sure `dev = F` in [app/app.R](./app/app.R) before running [build.sh](./build.sh).
 
-~~App currently deploys to [https://srgorelik.shinyapps.io/land-carbon-storage-app/](https://srgorelik.shinyapps.io/land-carbon-storage-app/).~~
+App currently runs on [https://land-carbon-storage-app-v1-1069052289734.us-central1.run.app/](https://land-carbon-storage-app-v1-1069052289734.us-central1.run.app/).
 
 ### Tips
 
@@ -24,16 +24,11 @@ docker run --platform=linux/amd64 -d -p 8080:8080 "${REGION}-docker.pkg.dev/${PR
 
 Helpful links:
 
-- [https://medium.com/@hdpoorna/deploying-an-r-shiny-dashboard-on-gcp-cloud-run-c1c32a076783](https://medium.com/@hdpoorna/deploying-an-r-shiny-dashboard-on-gcp-cloud-run-c1c32a076783)
+- *Main one:* [https://medium.com/@hdpoorna/deploying-an-r-shiny-dashboard-on-gcp-cloud-run-c1c32a076783](https://medium.com/@hdpoorna/deploying-an-r-shiny-dashboard-on-gcp-cloud-run-c1c32a076783)
 - [https://github.com/srgorelik/rshiny-gcp-template](https://github.com/srgorelik/rshiny-gcp-template)
 - [https://github.com/r-spatial/rgee/issues/284](https://github.com/r-spatial/rgee/issues/284)
 - [https://rocker-project.org/images/versioned/rstudio.html](https://rocker-project.org/images/versioned/rstudio.html)
 - [https://github.com/rocker-org/rocker-versioned2/wiki/geospatial_6345e63d82d0](https://github.com/rocker-org/rocker-versioned2/wiki/geospatial_6345e63d82d0)
 - [https://medium.com/@kakiang/mapping-a-cloud-run-service-to-a-custom-domain-9c9895037551](https://medium.com/@kakiang/mapping-a-cloud-run-service-to-a-custom-domain-9c9895037551)
 
-```
-# RETICULATE_PYTHON="/root/conda/envs/rgee_py/bin/python"
-# EARTHENGINE_GCLOUD="/usr/bin/gcloud"
-# EARTHENGINE_PYTHON="/root/conda/envs/rgee_py/bin/python"
-# EARTHENGINE_INIT_MESSAGE="TRUE"
-```
+
