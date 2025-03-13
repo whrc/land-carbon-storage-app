@@ -24,7 +24,7 @@ docker run --platform=linux/amd64 -d -p 8080:8080 "${REGION}-docker.pkg.dev/${PR
 
 Helpful links:
 
-- *Main one:* [https://medium.com/@hdpoorna/deploying-an-r-shiny-dashboard-on-gcp-cloud-run-c1c32a076783](https://medium.com/@hdpoorna/deploying-an-r-shiny-dashboard-on-gcp-cloud-run-c1c32a076783)
+- **Main one -** [https://medium.com/@hdpoorna/deploying-an-r-shiny-dashboard-on-gcp-cloud-run-c1c32a076783](https://medium.com/@hdpoorna/deploying-an-r-shiny-dashboard-on-gcp-cloud-run-c1c32a076783)
 - [https://github.com/srgorelik/rshiny-gcp-template](https://github.com/srgorelik/rshiny-gcp-template)
 - [https://github.com/r-spatial/rgee/issues/284](https://github.com/r-spatial/rgee/issues/284)
 - [https://rocker-project.org/images/versioned/rstudio.html](https://rocker-project.org/images/versioned/rstudio.html)
